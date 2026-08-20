@@ -180,7 +180,7 @@ var TOKEN_KEY = 'nyxia_cercle_token';
     headers: { 'Content-Type': 'application/json', 'X-Cercle-Token': token },
     body: '{}'
   }).then(function(r) { return r.json(); })
-    .then(function(data) { if (data.valid) location.href = (data.role === 'admin' || data.role === 'super_admin') ? '/admin.html' : '/dashboard.html'; })
+    .then(function(data) { if (data.valid) location.href = (data.role === 'admin' || data.role === 'super_admin') ? '/dashbord.html' : '/dashboard.html'; })
     .catch(function() {});
 })();
 
@@ -226,7 +226,7 @@ function doLogin() {
         name = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
         localStorage.setItem('nyxia_cercle_prenom', name);
       }
-      location.href = (data.role === 'admin' || data.role === 'super_admin') ? '/admin.html' : '/dashboard.html';
+      location.href = (data.role === 'admin' || data.role === 'super_admin') ? '/dashbord.html' : '/dashboard.html';
     } else {
       showMsg(data.error || 'Identifiants incorrects.', 'error');
     }
