@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Les Cercles · Espace</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg1:#0F1C3F; --bg2:#1A2554; --p:#7B5CFF; --p2:#5A6CFF; --p3:#4FA3FF;
+  --t:#fff; --t2:#D6D9F0; --t3:#8891B8; --red:#ff6b6b; --green:#00E676;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Outfit',sans-serif;background:var(--bg1);color:var(--t2);min-height:100vh}
+.header{position:relative;z-index:1;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 20px;border-bottom:1px solid rgba(123,92,255,.15);
+  background:rgba(15,28,63,.9);
+}
+.header h1{font-family:'Space Grotesk',sans-serif;font-size:18px;color:#fff}
+.header .prenom{font-size:13px;color:var(--t3)}
+.btn-out{
+  padding:8px 12px;border-radius:8px;border:1px solid rgba(255,107,107,.3);
+  background:rgba(255,107,107,.1);color:var(--red);font-size:12px;font-weight:600;cursor:pointer;
+}
+.main{position:relative;z-index:1;padding:20px;max-width:900px;margin:0 auto}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+.stat{
+  background:rgba(26,37,84,.6);border:1px solid rgba(123,92,255,.2);
+  border-radius:14px;padding:16px;
+}
+.stat .n{font-size:24px;font-weight:700;color:#fff}
+.stat .l{font-size:12px;color:var(--t3);margin-top:4px}
+.panel{
+  background:rgba(26,37,84,.55);border:1px solid rgba(123,92,255,.2);
+  border-radius:16px;padding:18px;margin-bottom:16px;
+}
+.panel h2{font-size:15px;color:#fff;margin-bottom:10px;font-family:'Space Grotesk',sans-serif}
+.lien-box{
+  display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+}
+.lien-box input{
+  flex:1;min-width:200px;padding:10px 12px;border-radius:10px;
+  border:1px solid rgba(123,92,255,.25);background:rgba(15,28,63,.7);color:var(--t2);font-size:13px;
+}
+.lien-box button{
+  padding:10px 14px;border-radius:10px;border:none;
+  background:linear-gradient(135deg,var(--p),var(--p2));color:#fff;font-weight:600;font-size:12px;cursor:pointer;
+}
+.tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.tab{
+  padding:8px 12px;border-radius:8px;border:1px solid rgba(123,92,255,.2);
+  background:transparent;color:var(--t3);font-size:12px;font-weight:600;cursor:pointer;
+}
+.tab.active{background:rgba(123,92,255,.2);color:#fff;border-color:rgba(123,92,255,.4)}
+.list{list-style:none}
+.list li{
+  padding:10px 0;border-bottom:1px solid rgba(123,92,255,.1);
+  display:flex;justify-content:space-between;gap:10px;font-size:14px;
+}
+.list li span{color:var(--t3);font-size:12px}
+.empty{color:var(--t3);font-size:13px;padding:12px 0}
+.err{color:var(--red);padding:20px;text-align:center}
+
+canvas#starry-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+</style>
+</head>
+<body>
+<canvas id="starry-canvas"></canvas>
+<div class="header">
+  <div>
+    <h1>Les Cercles</h1>
+    <div class="prenom" id="bonjour">—</div>
+  </div>
+  <button class="btn-out" onclick="logout()">Déconnexion</button>
+</div>
+<div class="main" id="main">
+  <p class="empty">Chargement…</p>
+</div>
+<script>
+var TOKEN_KEY = 'nyxia_cercle_token';
+var token = sessionStorage.getItem(TOKEN_KEY);
+if(!token) location.href='/login.html';
+
+async function logout(){
+  try{
+    await fetch('/api/logout',{method:'POST',headers:{'Content-Type':'application/json','X-Cercle-Token':token},body:'{}'});
+  }catch(e){}
+  sessionStorage.removeItem(TOKEN_KEY);
+  location.href='/login.html';
+}
+
+function copyLien(){
+  var input=document.getElementById('lien');
+  if(!input||!input.value) return;
+  navigator.clipboard.writeText(input.value).then(function(){
+    var b=document.getElementById('btn-copy');
+    if(b){ b.textContent='Copié'; setTimeout(function(){ b.textContent='Copier'; },1500); }
+  });
+}
+
+var niveau='direct';
+function showNiveau(n){
+  niveau=n;
+  document.querySelectorAll('.tab').forEach(function(t){
+    t.classList.toggle('active', t.getAttribute('data-n')===n);
+  });
+  document.querySelectorAll('.niveau-list').forEach(function(el){
+    el.style.display = el.id==='list-'+n ? 'block' : 'none';
+  });
+}
+
+function renderList(id, rows){
+  var el=document.getElementById(id);
+  if(!rows || !rows.length){
+    el.innerHTML='<p class="empty">Personne pour le moment dans ce cercle.</p>';
+    return;
+  }
+  el.innerHTML='<ul class="list">'+rows.map(function(m){
+    return '<li><strong>'+escapeHtml(m.prenom)+'</strong><span>'+(m.depuis||'').slice(0,10)+'</span></li>';
+  }).join('')+'</ul>';
+}
+
+function escapeHtml(s){
+  return String(s||'').replace(/[&<>"']/g,function(c){
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];
+  });
+}
+
+async function load(){
+  try{
+    var res=await fetch('/api/dashboard',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-Cercle-Token':token},
+      body:'{}'
+    });
+    var data=await res.json();
+    if(res.status===401){ location.href='/login.html'; return; }
+    if(data.error){
+      document.getElementById('main').innerHTML='<p class="err">'+escapeHtml(data.error)+'</p>';
+      return;
+    }
+    var p=data.profil||{};
+    document.getElementById('bonjour').textContent = p.prenom ? ('Bonjour '+p.prenom) : 'Bonjour';
+
+    var c=data.cercle||{totaux:{},direct:[],deuxieme:[],troisieme:[]};
+    var b=data.bilan||{};
+
+    document.getElementById('main').innerHTML =
+      '<div class="stats">'+
+        '<div class="stat"><div class="n">'+(c.totaux.direct||0)+'</div><div class="l">Cercle direct</div></div>'+
+        '<div class="stat"><div class="n">'+(c.totaux.deuxieme||0)+'</div><div class="l">2<sup>e</sup> cercle</div></div>'+
+        '<div class="stat"><div class="n">'+(c.totaux.troisieme||0)+'</div><div class="l">3<sup>e</sup> cercle</div></div>'+
+        '<div class="stat"><div class="n">'+(b.partageages||0)+'</div><div class="l">Partages</div></div>'+
+      '</div>'+
+      '<div class="panel"><h2>Ton lien de partage</h2>'+
+        (data.lienPartage
+          ? '<div class="lien-box"><input id="lien" readonly value="'+escapeHtml(data.lienPartage)+'"><button type="button" id="btn-copy" onclick="copyLien()">Copier</button></div>'
+          : '<p class="empty">Lien non disponible pour le moment.</p>')+
+      '</div>'+
+      '<div class="panel"><h2>Tes cercles</h2>'+
+        '<div class="tabs">'+
+          '<button type="button" class="tab active" data-n="direct" onclick="showNiveau(\'direct\')">Direct</button>'+
+          '<button type="button" class="tab" data-n="deuxieme" onclick="showNiveau(\'deuxieme\')">2e</button>'+
+          '<button type="button" class="tab" data-n="troisieme" onclick="showNiveau(\'troisieme\')">3e</button>'+
+        '</div>'+
+        '<div class="niveau-list" id="list-direct"></div>'+
+        '<div class="niveau-list" id="list-deuxieme" style="display:none"></div>'+
+        '<div class="niveau-list" id="list-troisieme" style="display:none"></div>'+
+      '</div>';
+
+    renderList('list-direct', c.direct);
+    renderList('list-deuxieme', c.deuxieme);
+    renderList('list-troisieme', c.troisieme);
+  }catch(e){
+    document.getElementById('main').innerHTML='<p class="err">Impossible de charger l’espace.</p>';
+  }
+}
+load();
+</script>
+<script src="/starry-bg.js" defer></script>
+</body>
+</html>

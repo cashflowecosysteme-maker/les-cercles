@@ -1,0 +1,22 @@
+name = "les-cercles"
+main = "_worker.js"
+compatibility_date = "2026-07-01"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "."
+binding = "ASSETS"
+
+# Même KV que le reste de l'écosystème (GARDIENNE_KV)
+[[kv_namespaces]]
+binding = "CASHFLOW_KV"
+id = "106db6da016d49d2b480452f19bad695"
+
+# Même D1 affiliation-pro-db (membres + cercles)
+[[d1_databases]]
+binding = "DB"
+database_name = "affiliation-pro-db"
+database_id = "0b22a4ba-4d5f-404d-b2e0-4838de6b1822"
+
+[vars]
+SITE_URL = "https://cercle.nyxia.top"
