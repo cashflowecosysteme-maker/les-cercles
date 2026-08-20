@@ -177,9 +177,53 @@ async function load(){
     renderList('list-direct', c.direct);
     renderList('list-deuxieme', c.deuxieme);
     renderList('list-troisieme', c.troisieme);
+
+    // Produits (Marketplace jumelé)
+    var produits = data.produits || [];
+    var prodHtml = '';
+    if (produits.length) {
+      prodHtml = '<div class="panel"><h2>Produits à partager</h2><div style="display:grid;gap:12px">' +
+        produits.map(function(p) {
+          var img = p.image ? '<img src="'+escapeHtml(p.image)+'" alt="" style="width:56px;height:56px;object-fit:cover;border-radius:10px">' : '';
+          return '<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid rgba(123,92,255,0.1)">' +
+            img +
+            '<div style="flex:1"><div style="color:#fff;font-weight:600">'+escapeHtml(p.titre)+'</div>' +
+            '<div style="font-size:12px;color:var(--t3);margin-top:4px">'+escapeHtml(p.description||'')+'</div>' +
+            (p.lien ? '<div style="margin-top:6px;font-size:12px;word-break:break-all;color:var(--p3)">'+escapeHtml(p.lien)+'</div>' : '') +
+            '</div></div>';
+        }).join('') + '</div></div>';
+    } else {
+      prodHtml = '<div class="panel"><h2>Produits à partager</h2><p class="empty">Aucun produit actif pour le moment.</p></div>';
+    }
+
+    // Messages
+    var messages = data.messages || [];
+    var msgHtml = '<div class="panel"><h2>Messages</h2>';
+    if (!messages.length) {
+      msgHtml += '<p class="empty">Aucun message pour le moment.</p></div>';
+    } else {
+      msgHtml += '<ul class="list">' + messages.map(function(m) {
+        return '<li><div><strong style="color:#fff">'+escapeHtml(m.subject||'Message')+'</strong><div style="font-size:12px;margin-top:4px">'+escapeHtml((m.content||'').slice(0,160))+'</div></div><span>'+escapeHtml((m.created_at||'').slice(0,10))+'</span></li>';
+      }).join('') + '</ul></div>';
+    }
+
+    var paypalVal = (data.profil && data.profil.paypal) ? data.profil.paypal : '';
+    var paypalHtml = '<div class="panel" id="paypal-box"><h2>Ton PayPal (pour être payé)</h2>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><input id="paypal-input" value="'+escapeHtml(paypalVal)+'" placeholder="ton@paypal.com" style="flex:1;min-width:200px;padding:10px;border-radius:10px;border:1px solid rgba(123,92,255,.25);background:rgba(15,28,63,.7);color:#fff">' +
+      '<button type="button" onclick="savePaypal()" style="padding:10px 14px;border:none;border-radius:10px;background:linear-gradient(135deg,#7B5CFF,#5A6CFF);color:#fff;font-weight:700;cursor:pointer">Enregistrer</button></div><div id="pp-msg" style="margin-top:8px;font-size:13px"></div></div>';
+    document.getElementById('main').innerHTML += paypalHtml + prodHtml + msgHtml;
   }catch(e){
     document.getElementById('main').innerHTML='<p class="err">Impossible de charger l’espace.</p>';
   }
+}
+async function savePaypal(){
+  var v=document.getElementById('paypal-input').value.trim();
+  try{
+    var r=await fetch('/api/paypal',{method:'POST',headers:{'Content-Type':'application/json','X-Cercle-Token':token},body:JSON.stringify({paypal:v})});
+    var d=await r.json();
+    document.getElementById('pp-msg').textContent=d.success?'Enregistré.':(d.error||'Erreur');
+    document.getElementById('pp-msg').style.color=d.success?'#00E676':'#FF4B6E';
+  }catch(e){document.getElementById('pp-msg').textContent='Erreur réseau';}
 }
 load();
 </script>
