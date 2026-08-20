@@ -82,10 +82,12 @@ function clearCookie(requestUrl) {
 
 function getToken(request) {
   const h = request.headers.get('X-Cercle-Token');
-  if (h) return h;
+  if (h) return h.trim();
+  const auth = request.headers.get('Authorization') || '';
+  if (auth.startsWith('Bearer ')) return auth.slice(7).trim();
   const c = request.headers.get('Cookie') || '';
   const m = c.match(/(?:^|;\s*)nyxia_cercle=([^;]+)/);
-  return m ? m[1] : null;
+  return m ? decodeURIComponent(m[1].trim()) : null;
 }
 
 async function getSession(request, env) {
@@ -448,78 +450,87 @@ const AGENT_PROMPTS = {
 };
 
 async function handleAgentChat(request, env) {
-  const session = await getSession(request, env);
-  if (!session) return json({ error: 'Session expirée.' }, 401);
+  try {
+    const body = await request.json();
+    let token = getToken(request) || (body.token || '').trim() || null;
+    if (!token) return json({ error: 'Session manquante.' }, 401);
 
-  const body = await request.json();
-  const message = (body.message || '').trim();
-  const agent = (body.agent || 'diane').toLowerCase();
-  const history = Array.isArray(body.history) ? body.history.slice(-12) : [];
-  const userName = body.userName || session.firstName || '';
+    const raw = await env.CASHFLOW_KV.get('cercles:session:' + token);
+    if (!raw) return json({ error: 'Session expirée. Reconnecte-toi.' }, 401);
+    const session = JSON.parse(raw);
 
-  if (!message) return json({ error: 'Message vide.' }, 400);
+    const message = (body.message || '').trim();
+    const agent = (body.agent || 'diane').toLowerCase();
+    const history = Array.isArray(body.history) ? body.history.slice(-12) : [];
+    const userName = body.userName || session.firstName || '';
+    if (!message) return json({ error: 'Message vide.' }, 400);
 
-  const apiKey = env.OPENROUTER_API_KEY || env.AI_API_KEY;
-  if (!apiKey) {
-    return json({ error: 'Clé OPENROUTER_API_KEY manquante sur le Worker Cercles.' }, 503);
-  }
+    const apiKey = env.OPENROUTER_API_KEY || env.AI_API_KEY;
+    if (!apiKey) return json({ error: 'Clé OPENROUTER_API_KEY manquante.' }, 503);
 
-  let system = AGENT_PROMPTS[agent] || AGENT_PROMPTS.diane;
-  system += `\n\nPrénom de la personne : ${userName || 'toi'}. Ne dis jamais le mot « Membre ».`;
+    const prompts = {
+      diane: 'Tu es Diane, formatrice. Français, tutoiement, ton clair et chaleureux. Tu aides les Admin des Cercles NyXia. Appelle la personne par son prénom. Une idée à la fois.',
+      nyxia: 'Tu es NyXia, assistante de l univers NyXia. Français, tutoiement, ton inspirant et pratique. Tu aides sur les produits, le partage et les Cercles. Appelle la personne par son prénom.',
+      eric: 'Tu es Eric, assistant de communication des Cercles NyXia. Français, tutoiement. Tu aides a rediger des messages, relancer le cercle, communiquer sans jargon agressif. Appelle la personne par son prenom. Vocabulaire : entraide, partage, cercle.'
+    };
 
-  // Contexte Éric : jamais connectés
-  if (agent === 'eric' && (session.role === 'admin' || session.role === 'super_admin')) {
-    try {
-      const rows = await env.DB.prepare(
-        `SELECT full_name, email, created_at, updated_at FROM users WHERE parent_id = ? AND role = 'affiliate' ORDER BY created_at DESC LIMIT 50`
-      ).bind(session.userId).all();
-      const jamais = [];
-      for (const u of (rows.results || [])) {
-        const c = (u.created_at || '').slice(0, 19);
-        const up = (u.updated_at || '').slice(0, 19);
-        if (!u.updated_at || up === c) {
-          const prenom = (u.full_name || '').trim().split(/\s+/)[0] || '—';
-          jamais.push(`${prenom} (${u.email}) inscrit le ${(u.created_at || '').slice(0, 10)}`);
+    let system = prompts[agent] || prompts.diane;
+    system += '\n\nPrenom de la personne : ' + (userName || 'toi') + '.';
+
+    if (agent === 'eric' && session.userId) {
+      try {
+        const rows = await env.DB.prepare(
+          "SELECT full_name, email, created_at, updated_at FROM users WHERE parent_id = ? AND role = 'affiliate' ORDER BY created_at DESC LIMIT 40"
+        ).bind(session.userId).all();
+        const jamais = [];
+        for (const u of (rows.results || [])) {
+          const c = (u.created_at || '').slice(0, 19);
+          const up = (u.updated_at || '').slice(0, 19);
+          if (!u.updated_at || up === c) {
+            const prenom = (u.full_name || '').trim().split(/\s+/)[0] || '-';
+            jamais.push(prenom + ' (' + u.email + ')');
+          }
         }
-      }
-      system += `\n\nMembres du cercle de cet Admin jamais connectés (${jamais.length}) :\n` + (jamais.length ? jamais.join('\n') : 'Aucun pour le moment.');
-    } catch (_) {}
-  }
-
-  const messages = [{ role: 'system', content: system }];
-  for (const h of history) {
-    if (h && (h.role === 'user' || h.role === 'assistant') && h.content) {
-      messages.push({ role: h.role, content: String(h.content).slice(0, 4000) });
+        system += '\n\nMembres jamais connectes (' + jamais.length + ') : ' + (jamais.length ? jamais.join(', ') : 'aucun');
+      } catch (e) { console.error('eric context', e); }
     }
-  }
-  messages.push({ role: 'user', content: message.slice(0, 4000) });
 
-  const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + apiKey,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': env.SITE_URL || 'https://cercle.nyxia.top',
-      'X-Title': 'NyXia Cercles'
-    },
-    body: JSON.stringify({
-      model: 'deepseek/deepseek-v3.2',
-      messages,
-      temperature: 0.7,
-      max_tokens: 1200
-    })
-  });
+    const messages = [{ role: 'system', content: system }];
+    for (const h of history) {
+      if (h && (h.role === 'user' || h.role === 'assistant') && h.content) {
+        messages.push({ role: h.role, content: String(h.content).slice(0, 4000) });
+      }
+    }
+    messages.push({ role: 'user', content: message.slice(0, 4000) });
 
-  if (!resp.ok) {
-    const errText = await resp.text();
-    console.error('OpenRouter', resp.status, errText);
-    return json({ error: 'L’IA ne répond pas pour le moment. Réessaie.' }, 502);
+    async function callModel(model) {
+      return fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + apiKey,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': env.SITE_URL || 'https://cercle.nyxia.top',
+          'X-Title': 'NyXia Cercles'
+        },
+        body: JSON.stringify({ model: model, messages: messages, temperature: 0.7, max_tokens: 1200 })
+      });
+    }
+
+    let resp = await callModel('deepseek/deepseek-chat');
+    if (!resp.ok) resp = await callModel('mistralai/mistral-small-3.2-24b-instruct');
+    if (!resp.ok) {
+      const errText = await resp.text();
+      console.error('OpenRouter fail', resp.status, errText.slice(0, 400));
+      return json({ error: "L'IA ne repond pas.", detail: errText.slice(0, 200) }, 502);
+    }
+    const data = await resp.json();
+    const reply = data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : null;
+    if (!reply) return json({ error: 'Reponse vide.' }, 502);
+    return json({ content: reply, reply: reply });
+  } catch (e) {
+    console.error('handleAgentChat', e);
+    return json({ error: 'Erreur inattendue.', detail: String(e && e.message ? e.message : e) }, 500);
   }
-  const data = await resp.json();
-  const reply = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content
-    ? data.choices[0].message.content
-    : 'Je n’ai pas pu formuler de réponse.';
-  return json({ reply });
 }
 
 
