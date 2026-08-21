@@ -83,8 +83,18 @@ function money(n){ return Number(n||0).toLocaleString('fr-CA',{minimumFractionDi
       <div><label>Abonnement mensuel ($)</label><input id="p-price-month" type="number" step="0.01" value="0" placeholder="0 si pas d’abo"></div>
       <div style="grid-column:1/-1"><label>Description courte</label><input id="p-desc"></div>
       <div><label>Image (URL)</label><input id="p-img" placeholder="https://…"></div>
-      <div><label>Lien d’offre</label><input id="p-link" placeholder="https://…"></div>
-      <div><label>Code promo</label><input id="p-promo"></div>
+      <div><label>Lien d’offre / page de vente</label><input id="p-link" placeholder="https://…"></div>
+      <div><label>Code promo (optionnel)</label><input id="p-promo"></div>
+      <div style="grid-column:1/-1"><label>Guide de promotion (publications, angles, quoi dire…)</label>
+        <textarea id="p-promo-guide" rows="4" placeholder="Ex. : publication prête, message type, où partager…" style="width:100%;border-radius:12px;padding:10px;background:rgba(6,10,24,.5);border:1px solid var(--border);color:#fff;font-family:Outfit,sans-serif"></textarea>
+      </div>
+      <div><label>Rejoindre le cercle — type</label>
+        <select id="p-join-type">
+          <option value="free">Gratuit</option>
+          <option value="paid">Payant</option>
+        </select>
+      </div>
+      <div><label>Lien « Rejoindre le cercle »</label><input id="p-join-url" placeholder="https://… inscription cercle"></div>
       <div><label>Statut</label>
         <select id="p-status">
           <option value="draft">Brouillon</option>
@@ -146,6 +156,9 @@ async function saveProduct() {
       imageUrl: document.getElementById('p-img').value.trim(),
       affiliateLink: document.getElementById('p-link').value.trim(),
       promoCode: document.getElementById('p-promo').value.trim(),
+      promo_guide: document.getElementById('p-promo-guide').value.trim(),
+      join_type: document.getElementById('p-join-type').value,
+      join_url: document.getElementById('p-join-url').value.trim(),
       status: document.getElementById('p-status').value,
       commission_n1: document.getElementById('p-c1').value || null,
       commission_n2: document.getElementById('p-c2').value || null,
