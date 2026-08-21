@@ -211,6 +211,7 @@ async function verifyPassword(password, salt, hash) {
 // ───────────── MARKETPLACE PRODUITS (D1) ─────────────
 async function handleListProducts(request, env) {
   if (env.DB) await ensureMarketplaceBillingColumns(env);
+  await ensureMarketplacePromoColumns(env);
   if (!env.DB) return json({ products: [] });
   try {
     await ensureSchema(env);
@@ -241,6 +242,14 @@ function isSuperAdminProduct(row) {
   return s == null || s === '' || s === 'superadmin' || s === 'SUPERADMIN';
 }
 
+
+async function ensureMarketplacePromoColumns(env) {
+  if (!env.DB) return;
+  try { await env.DB.prepare(`ALTER TABLE marketplace_products ADD COLUMN promo_guide TEXT`).run(); } catch (_) {}
+  try { await env.DB.prepare(`ALTER TABLE marketplace_products ADD COLUMN join_url TEXT`).run(); } catch (_) {}
+  try { await env.DB.prepare(`ALTER TABLE marketplace_products ADD COLUMN join_type TEXT DEFAULT 'free'`).run(); } catch (_) {}
+}
+
 async function ensureMarketplaceBillingColumns(env) {
   if (!env.DB) return;
   try { await env.DB.prepare(`ALTER TABLE marketplace_products ADD COLUMN price_monthly REAL DEFAULT 0`).run(); } catch (_) {}
@@ -251,6 +260,7 @@ async function ensureMarketplaceBillingColumns(env) {
 async function handleUpdateProduct(request, env) {
   if (!env.DB) return json({ error: 'DB absente' }, 500);
   if (typeof ensureMarketplaceBillingColumns === 'function') await ensureMarketplaceBillingColumns(env);
+  await ensureMarketplacePromoColumns(env);
   const body = await request.json().catch(() => ({}));
   const id = (body.id || '').trim();
   if (!id) return json({ error: 'Id requis.' }, 400);
@@ -314,6 +324,7 @@ async function handleDeleteProduct(request, env) {
 
 async function handleCreateProduct(request, env) {
   if (env.DB) await ensureMarketplaceBillingColumns(env);
+  await ensureMarketplacePromoColumns(env);
   if (!env.DB) return json({ error: 'Base non configurée.' }, 500);
   const body = await request.json().catch(() => ({}));
   const token = body.token || request.headers.get('X-Cercle-Token');
@@ -354,7 +365,19 @@ async function handleCreateProduct(request, env) {
     now,
     now
   ).run();
-  return json({ success: true, id, status });
+  
+  await ensureMarketplacePromoColumns(env);
+  try {
+    await env.DB.prepare(
+      `UPDATE marketplace_products SET promo_guide = ?, join_url = ?, join_type = ? WHERE id = ?`
+    ).bind(
+      (body.promo_guide || body.promoGuide || '').trim() || null,
+      (body.join_url || body.joinUrl || '').trim() || null,
+      (body.join_type || body.joinType || 'free'),
+      id
+    ).run();
+  } catch (e) { console.error('promo fields', e); }
+return json({ success: true, id, status });
 }
 
 
@@ -362,18 +385,19 @@ async function handleCreateProduct(request, env) {
 async function handleGetProduct(request, env, url) {
   if (!env.DB) return json({ error: 'DB absente' }, 500);
   await ensureMarketplaceBillingColumns(env);
+  await ensureMarketplacePromoColumns(env);
   const id = (url.searchParams.get('id') || '').trim();
   if (!id) return json({ error: 'id requis' }, 400);
   try {
     let row;
     try {
       row = await env.DB.prepare(
-        `SELECT id, title, description_short, description_long, price, price_monthly, billing_type, image_url, promo_code, affiliate_link, status, created_at
+        `SELECT id, title, description_short, description_long, price, price_monthly, billing_type, image_url, promo_code, affiliate_link, promo_guide, join_url, join_type, status, created_at
          FROM marketplace_products WHERE id = ? LIMIT 1`
       ).bind(id).first();
     } catch (e) {
       row = await env.DB.prepare(
-        `SELECT id, title, description_short, description_long, price, image_url, promo_code, affiliate_link, status, created_at
+        `SELECT id, title, description_short, description_long, price, image_url, promo_code, affiliate_link, promo_guide, join_url, join_type, status, created_at
          FROM marketplace_products WHERE id = ? LIMIT 1`
       ).bind(id).first();
     }
@@ -392,10 +416,11 @@ async function handlePublicRepertoire(request, env) {
   try {
     await ensureSchema(env);
     await ensureMarketplaceBillingColumns(env);
+  await ensureMarketplacePromoColumns(env);
     let results = [];
     try {
       const r = await env.DB.prepare(
-        `SELECT id, title, description_short, price, price_monthly, billing_type, image_url, status, promo_code, affiliate_link, created_at
+        `SELECT id, title, description_short, price, price_monthly, billing_type, image_url, status, promo_code, affiliate_link, promo_guide, join_url, join_type, created_at
          FROM marketplace_products
          WHERE status = 'active' OR status = 'published'
          ORDER BY created_at DESC LIMIT 200`
