@@ -7,16 +7,21 @@ compatibility_flags = ["nodejs_compat"]
 directory = "."
 binding = "ASSETS"
 
-# KV partagé (sessions uniquement — préfixe cercle:)
 [[kv_namespaces]]
 binding = "CASHFLOW_KV"
 id = "106db6da016d49d2b480452f19bad695"
 
-# NOUVELLE D1 dédiée — n'affecte PAS Affiliation Pro
 [[d1_databases]]
 binding = "DB"
 database_name = "nyxia-cercles-db"
 database_id = "a21fd813-06fa-41f1-b744-07bf1c5c7951"
+
+[ai]
+binding = "AI"
+
+[[vectorize]]
+binding = "VECTORIZE_INDEX"
+index_name = "univers-livres"
 
 [vars]
 SITE_URL = "https://cercles.nyxia.top"
