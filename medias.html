@@ -7,51 +7,16 @@
 <title>Banque médias — Le Cercle</title>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg1:#0A1628;--bg2:#0F1C3F;--bg3:#1A2554;--p:#7B5CFF;--p2:#5A6CFF;--p3:#4FA3FF;--t:#fff;--t2:#D6D9F0;--t3:#8891B8;--t4:#4a5278;--green:#00E676;--gold:#F4C842}
+:root{--bg1:#0A1628;--bg2:#0F1C3F;--p:#7B5CFF;--p2:#5A6CFF;--t:#fff;--t2:#D6D9F0;--t3:#8891B8}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:var(--bg1);color:var(--t2);font-family:Outfit,sans-serif}
 body{padding:28px;overflow-y:auto}
 h2{font-family:'Space Grotesk',sans-serif;font-size:22px;color:#fff;margin-bottom:6px}
-.sub{color:var(--t3);font-size:13px;margin-bottom:24px;line-height:1.5}
-.card{background:rgba(123,92,255,0.06);border:1px solid rgba(123,92,255,0.15);border-radius:16px;padding:20px;margin-bottom:16px}
-label{display:block;font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}
-input,select,textarea{width:100%;padding:12px 14px;border-radius:10px;border:1px solid rgba(123,92,255,0.2);background:rgba(15,28,63,0.5);color:#fff;font-family:Outfit,sans-serif;font-size:13px;outline:none}
-input:focus,select:focus,textarea:focus{border-color:var(--p)}
-.btn{padding:12px 20px;border-radius:10px;border:none;background:linear-gradient(135deg,var(--p),var(--p2));color:#fff;font-weight:600;font-size:13px;cursor:pointer;font-family:'Space Grotesk',sans-serif}
-.btn:hover{opacity:.92}
-.btn-ghost{background:rgba(123,92,255,.12);border:1px solid rgba(123,92,255,.3);color:var(--p3)}
-.row{display:flex;gap:10px;align-items:center}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media(max-width:640px){.grid2{grid-template-columns:1fr}}
-.hint{font-size:12px;color:var(--t3);margin-top:8px}
-.msg{margin-top:12px;font-size:13px;display:none}.msg.ok{display:block;color:var(--green)}.msg.err{display:block;color:#ff6b6b}
-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px}
-th{text-align:left;color:var(--t3);font-size:11px;text-transform:uppercase;padding:8px 6px}
-td{padding:10px 6px;border-top:1px solid rgba(123,92,255,.1);color:var(--t2)}
-td strong{color:#fff}
 </style>
-</head>
-<body>
-
-<div style="max-width:900px;margin:0 auto">
-  <h2>🛠️ Banque sons · images · vidéos</h2>
-  <p class="sub">Puise des images, vidéos et sons pour habiller tes créations.</p>
-  <div class="card">
-    <div class="row" style="margin-bottom:16px">
-      <input id="media-query" placeholder="Que cherches-tu ? (ex: coucher de soleil…)" style="flex:1">
-      <button class="btn" onclick="searchMedias()">Chercher ✦</button>
-    </div>
-    <div id="media-results" class="hint">Lance une recherche pour afficher des résultats.</div>
-  </div>
-</div>
-<script>
-function searchMedias(){
-  document.getElementById('media-results').textContent = 'La recherche médias sera branchée sur l’API existante du Studio.';
-}
-</script>
-
 <script>
 var TOKEN = sessionStorage.getItem('nyxia_token') || '';
+var mediaTab = 'visual';
+var mediaFormat = '';
 async function api(path, method, body) {
   var opts = { method: method || 'GET', headers: { 'Content-Type': 'application/json', 'X-Cercle-Token': TOKEN } };
   if (body) opts.body = JSON.stringify(body);
@@ -60,12 +25,68 @@ async function api(path, method, body) {
   if (!r.ok) throw new Error(data.error || ('Erreur ' + r.status));
   return data;
 }
-function showMsg(id, text, ok) {
-  var el = document.getElementById(id);
-  if (!el) return;
-  el.textContent = text;
-  el.className = 'msg ' + (ok ? 'ok' : 'err');
+function switchMediaTab(tab) {
+  mediaTab = tab;
+  document.getElementById('media-tab-visual').style.background = tab==='visual' ? 'rgba(123,92,255,0.15)' : 'transparent';
+  document.getElementById('media-tab-visual').style.color = tab==='visual' ? '#fff' : 'var(--t3)';
+  document.getElementById('media-tab-sound').style.background = tab==='sound' ? 'rgba(123,92,255,0.15)' : 'transparent';
+  document.getElementById('media-tab-sound').style.color = tab==='sound' ? '#fff' : 'var(--t3)';
+  document.getElementById('media-format-row').style.display = tab==='visual' ? 'flex' : 'none';
+}
+function setMediaFormat(f) {
+  mediaFormat = f;
+  document.querySelectorAll('.media-format-btn').forEach(function(b){
+    var on = (b.getAttribute('data-format')||'') === f;
+    b.style.background = on ? 'rgba(123,92,255,0.15)' : 'transparent';
+    b.style.color = on ? '#fff' : 'var(--t3)';
+  });
+}
+async function searchMedias() {
+  var q = (document.getElementById('media-query').value||'').trim();
+  var box = document.getElementById('media-results');
+  if (!q) { box.innerHTML = '<span style="color:var(--t3)">Écris ce que tu cherches.</span>'; return; }
+  box.innerHTML = '<span style="color:var(--t3)">Recherche…</span>';
+  try {
+    var path = mediaTab === 'sound' ? '/api/media/sounds' : '/api/media/images';
+    var body = { query: q, format: mediaFormat || undefined };
+    var out = await api(path, 'POST', body);
+    var items = out.results || out.items || out.images || out.sounds || [];
+    if (!items.length) { box.innerHTML = '<span style="color:var(--t3)">Aucun résultat. (API médias à brancher comme Studio si besoin)</span>'; return; }
+    box.innerHTML = items.map(function(it){
+      var url = it.url || it.proxyUrl || it.src || '';
+      if (mediaTab === 'sound') return '<div style="padding:12px;border:1px solid rgba(123,92,255,.15);border-radius:12px"><div style="font-size:12px;margin-bottom:8px">'+(it.title||'Son')+'</div><audio controls src="'+url+'" style="width:100%"></audio></div>';
+      return '<div style="border-radius:12px;overflow:hidden;border:1px solid rgba(123,92,255,.15)"><img src="'+url+'" style="width:100%;display:block" alt=""></div>';
+    }).join('');
+  } catch(e) {
+    box.innerHTML = '<span style="color:#ff6b6b">'+e.message+' — Les endpoints médias Studio (/api/media/*) doivent être présents sur ce Worker pour la recherche live.</span>';
+  }
 }
 </script>
+</head>
+<body>
+<div style="max-width:900px;margin:0 auto;width:100%">
+  <h2 style="font-family:'Space Grotesk',sans-serif;font-size:22px;margin-bottom:4px">✨ Banque d'images - Sons et Vidéos</h2>
+  <p style="color:var(--t3);font-size:13px;margin-bottom:20px">Puise des images, vidéos et sons directement dans le Cercle pour habiller tes créations.</p>
+
+  <div style="display:flex;gap:8px;margin-bottom:20px">
+    <button id="media-tab-visual" onclick="switchMediaTab('visual')" style="padding:8px 18px;border-radius:50px;border:1px solid rgba(123,92,255,0.3);background:rgba(123,92,255,0.15);color:#fff;font-weight:600;font-size:13px;cursor:pointer">🎨 Images & Vidéos</button>
+    <button id="media-tab-sound" onclick="switchMediaTab('sound')" style="padding:8px 18px;border-radius:50px;border:1px solid rgba(123,92,255,0.15);background:transparent;color:var(--t3);font-weight:600;font-size:13px;cursor:pointer">🎵 Sons</button>
+  </div>
+
+  <div style="display:flex;gap:8px;margin-bottom:14px" id="media-format-row">
+    <span style="font-size:11px;color:var(--t3);align-self:center;margin-right:4px">Format :</span>
+    <button class="media-format-btn" data-format="" onclick="setMediaFormat('')" style="padding:5px 12px;border-radius:50px;border:1px solid rgba(123,92,255,0.25);background:rgba(123,92,255,0.15);color:#fff;font-size:11px;cursor:pointer">Tous</button>
+    <button class="media-format-btn" data-format="square" onclick="setMediaFormat('square')" style="padding:5px 12px;border-radius:50px;border:1px solid rgba(123,92,255,0.15);background:transparent;color:var(--t3);font-size:11px;cursor:pointer">◻ 1:1</button>
+    <button class="media-format-btn" data-format="portrait" onclick="setMediaFormat('portrait')" style="padding:5px 12px;border-radius:50px;border:1px solid rgba(123,92,255,0.15);background:transparent;color:var(--t3);font-size:11px;cursor:pointer">▯ 9:16</button>
+    <button class="media-format-btn" data-format="landscape" onclick="setMediaFormat('landscape')" style="padding:5px 12px;border-radius:50px;border:1px solid rgba(123,92,255,0.15);background:transparent;color:var(--t3);font-size:11px;cursor:pointer">▭ 16:9</button>
+  </div>
+
+  <div style="display:flex;gap:8px;margin-bottom:20px">
+    <input type="text" id="media-query" placeholder="Que cherches-tu aujourd'hui ? (ex: coucher de soleil, pluie douce...)" style="flex:1;padding:12px 16px;border-radius:12px;border:1px solid rgba(123,92,255,0.2);background:rgba(15,28,63,0.5);color:#fff;font-family:'Outfit',sans-serif;font-size:13px">
+    <button onclick="searchMedias()" style="padding:12px 24px;border-radius:12px;border:none;background:linear-gradient(135deg,#7B5CFF,#5A6CFF);color:#fff;font-weight:600;font-size:13px;cursor:pointer">Chercher ✦</button>
+  </div>
+
+  <div id="media-results" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px"></div>
+</div>
 </body>
 </html>
