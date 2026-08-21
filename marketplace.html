@@ -178,10 +178,29 @@ function render() {
     return;
   }
   box.className = '';
-  box.innerHTML = '<table><tr><th>Titre</th><th>Prix</th><th>Statut</th><th>Promo</th></tr>' +
+  box.innerHTML = '<table><tr><th>Titre</th><th>Prix</th><th>Statut</th><th>Promo</th><th>Actions</th></tr>' +
     list.map(function(p){
-      return '<tr><td><strong>'+(p.title||'')+'</strong></td><td>'+formatTarif(p)+'</td><td>'+(p.status||'')+'</td><td>'+(p.promo_code||'—')+'</td></tr>';
+      var id = String(p.id||'');
+      var st = p.status || '';
+      var btnDraft = (st === 'active' || st === 'published')
+        ? '<button type="button" class="btn btn-ghost" style="padding:6px 10px;font-size:12px" onclick="setStatus(\''+id+'\',\'draft\')">Brouillon</button>'
+        : '<button type="button" class="btn btn-ghost" style="padding:6px 10px;font-size:12px" onclick="setStatus(\''+id+'\',\'active\')">Publier</button>';
+      var btnDel = '<button type="button" class="btn btn-ghost" style="padding:6px 10px;font-size:12px;color:#ff8fab;border-color:rgba(255,75,110,.3)" onclick="deleteProduct(\''+id+'\')">Supprimer</button>';
+      return '<tr><td><strong>'+(p.title||'')+'</strong></td><td>'+formatTarif(p)+'</td><td>'+st+'</td><td>'+(p.promo_code||'—')+'</td><td style="white-space:nowrap">'+btnDraft+' '+btnDel+'</td></tr>';
     }).join('') + '</table>';
+}
+async function setStatus(id, status) {
+  try {
+    await api('/api/products/update', 'POST', { id: id, status: status });
+    await load();
+  } catch (e) { alert(e.message || e); }
+}
+async function deleteProduct(id) {
+  if (!confirm('Supprimer ce produit ?')) return;
+  try {
+    await api('/api/products/delete', 'POST', { id: id });
+    await load();
+  } catch (e) { alert(e.message || e); }
 }
 async function load() {
   try {
