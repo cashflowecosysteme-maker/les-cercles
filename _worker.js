@@ -69,7 +69,7 @@ async function ensureSchema(env) {
   await env.DB.batch([
     env.DB.prepare(`CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
-      email TEXT NOT NULL UNIQUE,
+      email TEXT NOT NULL,
       password_hash TEXT NOT NULL,
       full_name TEXT,
       role TEXT NOT NULL DEFAULT 'affiliate',
@@ -193,18 +193,22 @@ async function handleLogin(request, env) {
 
   if (!email || !password) return json({ error: 'Email et mot de passe requis.' }, 400);
 
-  const user = await env.DB.prepare(
+  const candidates = await env.DB.prepare(
     `SELECT id, email, password_hash, full_name, role, affiliate_code, paypal_email, parent_id
-     FROM users WHERE email = ? LIMIT 1`
-  ).bind(email).first();
+     FROM users WHERE email = ? AND role IN ('admin', 'affiliate')
+     ORDER BY CASE role WHEN 'admin' THEN 0 ELSE 1 END, created_at ASC`
+  ).bind(email).all();
+  const list = candidates.results || [];
+  if (!list.length) return json({ error: 'Courriel ou mot de passe incorrect.' }, 401);
 
-  if (!user) return json({ error: 'Courriel ou mot de passe incorrect.' }, 401);
-  if (user.role !== 'admin' && user.role !== 'affiliate') {
-    return json({ error: 'Accès réservé aux Admins et Promoteurs du Cercle.' }, 403);
+  let user = null;
+  for (const cand of list) {
+    if (await verifyPasswordAffil(password, cand.password_hash)) {
+      user = cand;
+      break;
+    }
   }
-
-  const ok = await verifyPasswordAffil(password, user.password_hash);
-  if (!ok) return json({ error: 'Courriel ou mot de passe incorrect.' }, 401);
+  if (!user) return json({ error: 'Courriel ou mot de passe incorrect.' }, 401);
 
   const token = randomToken();
   const session = {
@@ -336,8 +340,11 @@ async function handleCreateMember(request, env) {
   if (!prenom || !email || !password) return json({ error: 'Prénom, courriel et mot de passe requis.' }, 400);
   if (password.length < 6) return json({ error: 'Mot de passe : minimum 6 caractères.' }, 400);
 
-  const existing = await env.DB.prepare(`SELECT id FROM users WHERE email = ?`).bind(email).first();
-  if (existing) return json({ error: 'Ce courriel existe déjà.' }, 409);
+  // Même courriel OK s'il n'existe pas déjà avec le MÊME rôle
+  // (un Admin peut aussi être Promoteur sous un autre compte / rattachement)
+  // Même courriel autorisé pour un autre rôle ou un autre produit/cercle.
+  // On ne bloque que le doublon exact : même email + même rôle + même parent.
+
 
   let parentId = null;
   if (parentCode) {
