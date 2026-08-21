@@ -30,22 +30,6 @@ th{text-align:left;color:var(--t3);font-size:11px;text-transform:uppercase;paddi
 td{padding:10px 6px;border-top:1px solid rgba(123,92,255,.1);color:var(--t2)}
 td strong{color:#fff}
 </style>
-</head>
-<body>
-
-<div style="max-width:640px;margin:0 auto">
-  <h2>🔗 Configuration Webhook Systeme.io</h2>
-  <p class="sub">Colle l’URL de ton webhook Systeme.io pour synchroniser les ventes et les inscriptions.</p>
-  <div class="card">
-    <label>URL du webhook</label>
-    <input type="url" id="webhook-url" placeholder="https://..." style="margin-bottom:14px">
-    <button class="btn" onclick="saveWebhook()">Enregistrer</button>
-    <div class="msg" id="wh-msg"></div>
-  </div>
-</div>
-<script>
-function saveWebhook(){ showMsg('wh-msg', 'Enregistrement à brancher (champ webhook déjà prévu côté users).', false); }
-</script>
 
 <script>
 var TOKEN = sessionStorage.getItem('nyxia_token') || '';
@@ -64,5 +48,22 @@ function showMsg(id, text, ok) {
   el.className = 'msg ' + (ok ? 'ok' : 'err');
 }
 </script>
+</head>
+<body>
+
+<div style="max-width:640px;margin:0 auto">
+  <h2>🔗 Configuration Webhook Systeme.io</h2>
+  <p class="sub">Colle l’URL de ton webhook Systeme.io pour synchroniser les ventes et les inscriptions.</p>
+  <div class="card">
+    <label>URL du webhook</label>
+    <input type="url" id="webhook-url" placeholder="https://..." style="margin-bottom:14px">
+    <button class="btn" onclick="saveWebhook()">Enregistrer</button>
+    <div class="msg" id="wh-msg"></div>
+  </div>
+</div>
+<script>
+function saveWebhook(){ showMsg('wh-msg', 'Enregistrement à brancher (champ webhook déjà prévu côté users).', false); }
+</script>
+
 </body>
 </html>
