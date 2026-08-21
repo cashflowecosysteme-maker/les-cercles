@@ -240,7 +240,11 @@ async function load() {
   document.getElementById('st-total').textContent = ALL.length;
   document.getElementById('st-pub').textContent = pub;
   document.getElementById('st-draft').textContent = draft;
-  document.getElementById('st-views').textContent = 0;
+  try {
+    var st = await api('/api/stats', 'POST', { token: TOKEN });
+    if (st && st.clicks != null) document.getElementById('st-views').textContent = st.clicks;
+    else document.getElementById('st-views').textContent = '0';
+  } catch (e) { document.getElementById('st-views').textContent = '0'; }
   render();
 }
 load();
