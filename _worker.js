@@ -210,6 +210,7 @@ async function verifyPassword(password, salt, hash) {
 
 // ───────────── MARKETPLACE PRODUITS (D1) ─────────────
 async function handleListProducts(request, env) {
+  if (env.DB) await ensureMarketplaceBillingColumns(env);
   if (!env.DB) return json({ products: [] });
   try {
     await ensureSchema(env);
@@ -229,6 +230,59 @@ async function ensureMarketplaceBillingColumns(env) {
   if (!env.DB) return;
   try { await env.DB.prepare(`ALTER TABLE marketplace_products ADD COLUMN price_monthly REAL DEFAULT 0`).run(); } catch (_) {}
   try { await env.DB.prepare(`ALTER TABLE marketplace_products ADD COLUMN billing_type TEXT DEFAULT 'one_time'`).run(); } catch (_) {}
+}
+
+
+async function handleUpdateProduct(request, env) {
+  if (!env.DB) return json({ error: 'DB absente' }, 500);
+  await ensureMarketplaceBillingColumns(env);
+  const body = await request.json().catch(() => ({}));
+  const id = (body.id || '').trim();
+  if (!id) return json({ error: 'Id requis.' }, 400);
+  const status = body.status != null ? String(body.status) : null;
+  try {
+    await env.DB.prepare(
+      `UPDATE marketplace_products SET
+        title = COALESCE(?, title),
+        description_short = COALESCE(?, description_short),
+        price = COALESCE(?, price),
+        price_monthly = COALESCE(?, price_monthly),
+        billing_type = COALESCE(?, billing_type),
+        affiliate_link = COALESCE(?, affiliate_link),
+        image_url = COALESCE(?, image_url),
+        promo_code = COALESCE(?, promo_code),
+        status = COALESCE(?, status),
+        updated_at = datetime('now')
+       WHERE id = ?`
+    ).bind(
+      body.title || null,
+      body.description || body.description_short || null,
+      body.price != null ? Number(body.price) : null,
+      body.price_monthly != null ? Number(body.price_monthly) : null,
+      body.billing_type || null,
+      body.affiliateLink || body.affiliate_link || null,
+      body.imageUrl || body.image_url || null,
+      body.promoCode || body.promo_code || null,
+      status,
+      id
+    ).run();
+    return json({ success: true, id, status });
+  } catch (e) {
+    return json({ error: String(e.message || e) }, 500);
+  }
+}
+
+async function handleDeleteProduct(request, env) {
+  if (!env.DB) return json({ error: 'DB absente' }, 500);
+  const body = await request.json().catch(() => ({}));
+  const id = (body.id || '').trim();
+  if (!id) return json({ error: 'Id requis.' }, 400);
+  try {
+    await env.DB.prepare(`DELETE FROM marketplace_products WHERE id = ?`).bind(id).run();
+    return json({ success: true });
+  } catch (e) {
+    return json({ error: String(e.message || e) }, 500);
+  }
 }
 
 async function handleCreateProduct(request, env) {
@@ -280,16 +334,23 @@ async function handleCreateProduct(request, env) {
 
 async function handleGetProduct(request, env, url) {
   if (!env.DB) return json({ error: 'DB absente' }, 500);
+  await ensureMarketplaceBillingColumns(env);
   const id = (url.searchParams.get('id') || '').trim();
   if (!id) return json({ error: 'id requis' }, 400);
   try {
-    await ensureSchema(env);
-    const row = await env.DB.prepare(
-      `SELECT id, title, description_short, description_long, price, price_monthly, billing_type, image_url, promo_code, affiliate_link, status, created_at
-       FROM marketplace_products WHERE id = ? LIMIT 1`
-    ).bind(id).first();
+    let row;
+    try {
+      row = await env.DB.prepare(
+        `SELECT id, title, description_short, description_long, price, price_monthly, billing_type, image_url, promo_code, affiliate_link, status, created_at
+         FROM marketplace_products WHERE id = ? LIMIT 1`
+      ).bind(id).first();
+    } catch (e) {
+      row = await env.DB.prepare(
+        `SELECT id, title, description_short, description_long, price, image_url, promo_code, affiliate_link, status, created_at
+         FROM marketplace_products WHERE id = ? LIMIT 1`
+      ).bind(id).first();
+    }
     if (!row) return json({ error: 'Produit introuvable' }, 404);
-    // public: only active/published
     if (row.status !== 'active' && row.status !== 'published') {
       return json({ error: 'Produit non publié' }, 404);
     }
@@ -300,16 +361,29 @@ async function handleGetProduct(request, env, url) {
 }
 
 async function handlePublicRepertoire(request, env) {
-  if (!env.DB) return json({ products: [] });
+  if (!env.DB) return json({ products: [], error: 'DB absente' });
   try {
     await ensureSchema(env);
-    const { results } = await env.DB.prepare(
-      `SELECT id, title, description_short, price, price_monthly, billing_type, image_url, status, promo_code, affiliate_link, created_at
-       FROM marketplace_products
-       WHERE status = 'active' OR status = 'published'
-       ORDER BY created_at DESC LIMIT 200`
-    ).all();
-    return json({ products: results || [] });
+    await ensureMarketplaceBillingColumns(env);
+    let results = [];
+    try {
+      const r = await env.DB.prepare(
+        `SELECT id, title, description_short, price, price_monthly, billing_type, image_url, status, promo_code, affiliate_link, created_at
+         FROM marketplace_products
+         WHERE status = 'active' OR status = 'published'
+         ORDER BY created_at DESC LIMIT 200`
+      ).all();
+      results = r.results || [];
+    } catch (e1) {
+      const r = await env.DB.prepare(
+        `SELECT id, title, description_short, price, image_url, status, promo_code, affiliate_link, created_at
+         FROM marketplace_products
+         WHERE status = 'active' OR status = 'published'
+         ORDER BY created_at DESC LIMIT 200`
+      ).all();
+      results = r.results || [];
+    }
+    return json({ products: results });
   } catch (e) {
     console.error('repertoire', e);
     return json({ products: [], error: String(e.message || e) });
@@ -618,7 +692,7 @@ const url = new URL(request.url);
     const path = url.pathname;
 
     if (path === '/' || path === '') {
-      return Response.redirect(url.origin + '/repertoire.html', 302);
+      return env.ASSETS.fetch(new Request(new URL('/index.html', request.url), request));
     }
     // Lien de création d'équipe / parrainage → inscription
     if (path.startsWith('/r/')) {
@@ -636,6 +710,8 @@ const url = new URL(request.url);
       if (path === '/api/helpdesk' && request.method === 'POST') return await handleHelpdesk(request, env);
       if (path === '/api/products' && request.method === 'GET') return await handleListProducts(request, env);
       if (path === '/api/products' && request.method === 'POST') return await handleCreateProduct(request, env);
+      if (path === '/api/products/update' && request.method === 'POST') return await handleUpdateProduct(request, env);
+      if (path === '/api/products/delete' && request.method === 'POST') return await handleDeleteProduct(request, env);
       if (path === '/api/eric/access' && request.method === 'POST') {
         const body = await request.json().catch(() => ({}));
         const token = body.token || '';
