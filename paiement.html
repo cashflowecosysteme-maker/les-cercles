@@ -1,75 +1,56 @@
 <!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" type="image/png" href="/FavIcon.png">
-<title>Paiement PayPal — Le Cercle</title>
+<html lang="fr"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paiements — Le Cercle</title>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg1:#0A1628;--bg2:#0F1C3F;--bg3:#1A2554;--p:#7B5CFF;--p2:#5A6CFF;--p3:#4FA3FF;--t:#fff;--t2:#D6D9F0;--t3:#8891B8;--t4:#4a5278;--green:#00E676;--gold:#F4C842}
+:root{--bg1:#0A1628;--card:rgba(123,92,255,.06);--border:rgba(123,92,255,.15);--p:#7B5CFF;--p2:#5A6CFF;--t:#fff;--t2:#D6D9F0;--t3:#8891B8;--t4:#4a5278;--green:#00E676;--gold:#F4C842;--pink:#E040FB}
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%;background:var(--bg1);color:var(--t2);font-family:Outfit,sans-serif}
-body{padding:28px;overflow-y:auto}
-h2{font-family:'Space Grotesk',sans-serif;font-size:22px;color:#fff;margin-bottom:6px}
-.sub{color:var(--t3);font-size:13px;margin-bottom:24px;line-height:1.5}
-.card{background:rgba(123,92,255,0.06);border:1px solid rgba(123,92,255,0.15);border-radius:16px;padding:20px;margin-bottom:16px}
-label{display:block;font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}
-input,select,textarea{width:100%;padding:12px 14px;border-radius:10px;border:1px solid rgba(123,92,255,0.2);background:rgba(15,28,63,0.5);color:#fff;font-family:Outfit,sans-serif;font-size:13px;outline:none}
-input:focus,select:focus,textarea:focus{border-color:var(--p)}
-.btn{padding:12px 20px;border-radius:10px;border:none;background:linear-gradient(135deg,var(--p),var(--p2));color:#fff;font-weight:600;font-size:13px;cursor:pointer;font-family:'Space Grotesk',sans-serif}
-.btn:hover{opacity:.92}
-.btn-ghost{background:rgba(123,92,255,.12);border:1px solid rgba(123,92,255,.3);color:var(--p3)}
-.row{display:flex;gap:10px;align-items:center}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media(max-width:640px){.grid2{grid-template-columns:1fr}}
-.hint{font-size:12px;color:var(--t3);margin-top:8px}
-.msg{margin-top:12px;font-size:13px;display:none}.msg.ok{display:block;color:var(--green)}.msg.err{display:block;color:#ff6b6b}
-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px}
-th{text-align:left;color:var(--t3);font-size:11px;text-transform:uppercase;padding:8px 6px}
-td{padding:10px 6px;border-top:1px solid rgba(123,92,255,.1);color:var(--t2)}
-td strong{color:#fff}
+body{font-family:Outfit,sans-serif;background:var(--bg1);color:var(--t2);padding:28px;min-height:100vh}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:16px}
+h1{font-family:'Space Grotesk',sans-serif;font-size:24px;color:#fff;margin-bottom:4px}
+.sub{color:var(--t3);font-size:13px;margin-bottom:18px}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:16px 0}
+@media(max-width:800px){.stats{grid-template-columns:1fr 1fr}}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px 12px;text-align:center}
+.stat .ico{font-size:18px;margin-bottom:6px}
+.stat b{display:block;font-size:22px;color:#fff;font-family:'Space Grotesk',sans-serif}
+.stat.money b{color:var(--green)}.stat.pending b{color:var(--gold)}.stat.paid b{color:var(--pink)}
+.stat span{font-size:12px;color:var(--t3)}
+.empty{text-align:center;color:var(--t3);padding:40px 12px;font-size:14px}
+.empty small{display:block;margin-top:6px;font-size:12px;color:var(--t4)}
+.lien-box{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px 18px;display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.lien-box .meta{flex:1;min-width:0}.lien-box .lbl{font-size:12px;color:var(--t3);margin-bottom:4px}
+.lien-box code{font-size:13px;color:#fff;word-break:break-all}
+.btn{padding:10px 16px;border-radius:12px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:linear-gradient(135deg,var(--p),var(--p2));color:#fff;font-family:Outfit,sans-serif;white-space:nowrap}
+.btn-ghost{background:rgba(123,92,255,.12);border:1px solid rgba(123,92,255,.25);color:#fff}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+input,select{padding:12px 14px;border-radius:12px;border:1px solid rgba(123,92,255,.2);background:rgba(15,28,63,.5);color:#fff;font-family:Outfit,sans-serif;font-size:13px;outline:none}
+.search{border-radius:50px;max-width:280px}
+.top-row{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:16px}
+.mkt-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0}
+@media(max-width:700px){.mkt-stats{grid-template-columns:1fr 1fr}}
+.chip{padding:6px 12px;border-radius:50px;border:1px solid rgba(123,92,255,.2);background:transparent;color:var(--t3);font-size:12px;cursor:pointer}
+.chip.active{background:rgba(123,92,255,.2);color:#fff}
 </style>
-
 <script>
-var TOKEN = sessionStorage.getItem('nyxia_token') || '';
-async function api(path, method, body) {
-  var opts = { method: method || 'GET', headers: { 'Content-Type': 'application/json', 'X-Cercle-Token': TOKEN } };
-  if (body) opts.body = JSON.stringify(body);
-  var r = await fetch(path, opts);
-  var data = await r.json().catch(function(){ return {}; });
-  if (!r.ok) throw new Error(data.error || ('Erreur ' + r.status));
-  return data;
-}
-function showMsg(id, text, ok) {
-  var el = document.getElementById(id);
-  if (!el) return;
-  el.textContent = text;
-  el.className = 'msg ' + (ok ? 'ok' : 'err');
-}
+var TOKEN=sessionStorage.getItem('nyxia_token')||'';
+async function api(p,m,b){var o={method:m||'GET',headers:{'Content-Type':'application/json','X-Cercle-Token':TOKEN}};if(b)o.body=JSON.stringify(b);var r=await fetch(p,o);return r.json().catch(function(){return{}})}
+function money(n){return Number(n||0).toLocaleString('fr-CA',{minimumFractionDigits:2,maximumFractionDigits:2})+' $'}
 </script>
-</head>
-<body>
+</head><body>
 
-<div style="max-width:640px;margin:0 auto">
-  <h2>💳 Paiement — Configuration PayPal</h2>
-  <p class="sub">Indique ton courriel PayPal pour recevoir tes commissions.</p>
+<div style="max-width:1100px;margin:0 auto">
   <div class="card">
-    <label>Courriel PayPal</label>
-    <input type="email" id="paypal-email" placeholder="ton@email.com" style="margin-bottom:14px">
-    <button class="btn" onclick="savePaypal()">Enregistrer mon PayPal</button>
-    <div class="msg" id="pp-msg"></div>
+    <div style="font-weight:600;color:#fff;margin-bottom:4px">⏱ Paiements en attente</div>
+    <p class="sub">Payez vos membres pour leurs commissions</p>
+    <div class="empty">Aucun paiement en attente</div>
+  </div>
+  <div style="text-align:center;color:var(--t4);font-size:12px;margin:12px 0">Historique</div>
+  <div class="card">
+    <div style="font-weight:600;color:#fff;margin-bottom:4px">Historique des paiements</div>
+    <p class="sub">Vos paiements déjà effectués</p>
+    <div class="empty">Aucun paiement effectué<small>Les paiements traités apparaîtront ici</small></div>
   </div>
 </div>
-<script>
-(async function(){
-  try {
-    var data = await api('/api/check-auth','POST',{token:TOKEN});
-    if (data.valid && data.paypal) document.getElementById('paypal-email').value = data.paypal;
-  } catch(e) {}
-})();
-function savePaypal(){ showMsg('pp-msg', 'Sauvegarde PayPal à brancher sur le profil utilisateur.', false); }
-</script>
-
-</body>
-</html>
+</body></html>
