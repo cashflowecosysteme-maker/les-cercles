@@ -210,21 +210,56 @@ async function verifyPassword(password, salt, hash) {
 
 // ───────────── MARKETPLACE PRODUITS (D1) ─────────────
 async function handleListProducts(request, env) {
-  if (env.DB) await ensureMarketplaceBillingColumns(env);
-  await ensureMarketplacePromoColumns(env);
   if (!env.DB) return json({ products: [] });
+  if (typeof ensureMarketplaceBillingColumns === 'function') await ensureMarketplaceBillingColumns(env);
+  if (typeof ensureMarketplacePromoColumns === 'function') await ensureMarketplacePromoColumns(env);
   try {
-    await ensureSchema(env);
-    const { results } = await env.DB.prepare(
-      `SELECT id, title, description_short, price, price_monthly, billing_type, status, image_url, promo_code, commission_n1, commission_n2, commission_n3, seller_id, created_at
-       FROM marketplace_products ORDER BY created_at DESC LIMIT 200`
-    ).all();
-    return json({ products: results || [] });
+    const url = new URL(request.url);
+    let token = url.searchParams.get('token') || request.headers.get('X-Cercle-Token') || '';
+    // body token optional for POST-style - GET uses header/query
+    let session = null;
+    if (token && env.CASHFLOW_KV) {
+      const raw = await env.CASHFLOW_KV.get('session:' + token);
+      if (raw) try { session = JSON.parse(raw); } catch (_) {}
+    }
+    const isSuper = session && (session.role === 'superadmin' || session.isSuperAdmin === true);
+
+    let results = [];
+    if (isSuper) {
+      const r = await env.DB.prepare(
+        `SELECT id, title, description_short, price, price_monthly, billing_type, status, image_url, promo_code, commission_n1, commission_n2, commission_n3, seller_id, created_at
+         FROM marketplace_products ORDER BY created_at DESC LIMIT 200`
+      ).all();
+      results = r.results || [];
+    } else {
+      // Admin Cercle : UNIQUEMENT ses produits (jamais ceux du Super Admin)
+      const uid = session && (session.userId || session.id) || null;
+      if (uid) {
+        const r = await env.DB.prepare(
+          `SELECT id, title, description_short, price, price_monthly, billing_type, status, image_url, promo_code, commission_n1, commission_n2, commission_n3, seller_id, created_at
+           FROM marketplace_products
+           WHERE seller_id = ?
+           ORDER BY created_at DESC LIMIT 200`
+        ).bind(uid).all();
+        results = r.results || [];
+      } else {
+        // Sans session claire : ne pas exposer les produits Super Admin
+        const r = await env.DB.prepare(
+          `SELECT id, title, description_short, price, price_monthly, billing_type, status, image_url, promo_code, commission_n1, commission_n2, commission_n3, seller_id, created_at
+           FROM marketplace_products
+           WHERE seller_id IS NOT NULL AND seller_id != '' AND seller_id != 'superadmin' AND seller_id != 'SUPERADMIN'
+           ORDER BY created_at DESC LIMIT 200`
+        ).all();
+        results = r.results || [];
+      }
+    }
+    return json({ products: results });
   } catch (e) {
     console.error('list products', e);
     return json({ products: [], error: String(e.message || e) });
   }
 }
+
 
 
 
@@ -339,7 +374,8 @@ async function handleCreateProduct(request, env) {
   if (!title) return json({ error: 'Titre requis.' }, 400);
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
-  const status = body.status === 'active' || body.status === 'published' ? 'active' : 'draft';
+  // Admin Cercle : toujours brouillon → Super Admin valide la publication
+  const status = 'draft';
   await ensureSchema(env);
   await env.DB.prepare(
     `INSERT INTO marketplace_products
@@ -368,12 +404,37 @@ async function handleCreateProduct(request, env) {
   
   await ensureMarketplacePromoColumns(env);
   try {
+    // Lien "Rejoindre le cercle" auto : page produit + code parrain du vendeur (Admin)
+    let joinUrl = (body.join_url || body.joinUrl || '').trim();
+    let joinType = (body.join_type || body.joinType || 'free');
+    if (!joinUrl) {
+      let affCode = '';
+      if (sellerId && env.DB) {
+        try {
+          const u = await env.DB.prepare('SELECT affiliate_code FROM users WHERE id = ?').bind(sellerId).first();
+          if (u && u.affiliate_code) affCode = String(u.affiliate_code);
+        } catch (_) {}
+      }
+      if (!affCode && body.token && env.CASHFLOW_KV) {
+        try {
+          const raw = await env.CASHFLOW_KV.get('session:' + body.token);
+          if (raw) {
+            const s = JSON.parse(raw);
+            affCode = s.code || s.affiliate_code || s.affiliateCode || '';
+          }
+        } catch (_) {}
+      }
+      const base = (env.SITE_URL && String(env.SITE_URL).includes('repertoire'))
+        ? String(env.SITE_URL).replace(/\/$/, '')
+        : 'https://repertoire.nyxia.top';
+      joinUrl = base + '/?product=' + encodeURIComponent(id) + (affCode ? ('&ref=' + encodeURIComponent(String(affCode).toUpperCase())) : '');
+    }
     await env.DB.prepare(
       `UPDATE marketplace_products SET promo_guide = ?, join_url = ?, join_type = ? WHERE id = ?`
     ).bind(
       (body.promo_guide || body.promoGuide || '').trim() || null,
-      (body.join_url || body.joinUrl || '').trim() || null,
-      (body.join_type || body.joinType || 'free'),
+      joinUrl || null,
+      joinType,
       id
     ).run();
   } catch (e) { console.error('promo fields', e); }
