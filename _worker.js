@@ -214,7 +214,7 @@ async function handleListProducts(request, env) {
   try {
     await ensureSchema(env);
     const { results } = await env.DB.prepare(
-      `SELECT id, title, description_short, price, status, image_url, promo_code, commission_n1, commission_n2, commission_n3, created_at
+      `SELECT id, title, description_short, price, price_monthly, billing_type, status, image_url, promo_code, commission_n1, commission_n2, commission_n3, created_at
        FROM marketplace_products ORDER BY created_at DESC LIMIT 200`
     ).all();
     return json({ products: results || [] });
@@ -243,8 +243,8 @@ async function handleCreateProduct(request, env) {
   await ensureSchema(env);
   await env.DB.prepare(
     `INSERT INTO marketplace_products
-     (id, seller_id, title, description_short, image_url, price, commission_n1, commission_n2, commission_n3, affiliate_link, promo_code, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (id, seller_id, title, description_short, image_url, price, price_monthly, billing_type, commission_n1, commission_n2, commission_n3, affiliate_link, promo_code, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
     id,
     sellerId,
@@ -252,6 +252,10 @@ async function handleCreateProduct(request, env) {
     (body.description || body.description_short || '').trim(),
     (body.imageUrl || body.image_url || '').trim() || null,
     Number(body.price || 0),
+    Number(body.price_monthly || body.priceMonthly || 0),
+    (['one_time','subscription','both'].includes(String(body.billing_type || body.billingType || ''))
+      ? String(body.billing_type || body.billingType)
+      : 'one_time'),
     body.commission_n1 != null ? Number(body.commission_n1) : null,
     body.commission_n2 != null ? Number(body.commission_n2) : null,
     body.commission_n3 != null ? Number(body.commission_n3) : null,
@@ -264,6 +268,340 @@ async function handleCreateProduct(request, env) {
   return json({ success: true, id, status });
 }
 
+
+
+async function handleGetProduct(request, env, url) {
+  if (!env.DB) return json({ error: 'DB absente' }, 500);
+  const id = (url.searchParams.get('id') || '').trim();
+  if (!id) return json({ error: 'id requis' }, 400);
+  try {
+    await ensureSchema(env);
+    const row = await env.DB.prepare(
+      `SELECT id, title, description_short, description_long, price, price_monthly, billing_type, image_url, promo_code, affiliate_link, status, created_at
+       FROM marketplace_products WHERE id = ? LIMIT 1`
+    ).bind(id).first();
+    if (!row) return json({ error: 'Produit introuvable' }, 404);
+    // public: only active/published
+    if (row.status !== 'active' && row.status !== 'published') {
+      return json({ error: 'Produit non publié' }, 404);
+    }
+    return json({ product: row });
+  } catch (e) {
+    return json({ error: String(e.message || e) }, 500);
+  }
+}
+
+async function handlePublicRepertoire(request, env) {
+  if (!env.DB) return json({ products: [] });
+  try {
+    await ensureSchema(env);
+    const { results } = await env.DB.prepare(
+      `SELECT id, title, description_short, price, price_monthly, billing_type, image_url, status, promo_code, affiliate_link, created_at
+       FROM marketplace_products
+       WHERE status = 'active' OR status = 'published'
+       ORDER BY created_at DESC LIMIT 200`
+    ).all();
+    return json({ products: results || [] });
+  } catch (e) {
+    console.error('repertoire', e);
+    return json({ products: [], error: String(e.message || e) });
+  }
+}
+
+// ───────────── HELPDESK PUBLIC (NyXia · OpenRouter) ─────────────
+// Chat d'accueil PUBLIC du Répertoire — aucune session requise.
+// Persona NyXia, orienté aide + conversion douce vers « Demander mon espace ».
+// Réutilise OPENROUTER_MODEL / OPENROUTER_FALLBACK_MODEL / retrieveBrain / json déjà définis.
+const HELPDESK_SYSTEM = `Tu es **NyXia**, l'accueil vivant du **Répertoire du Cercle NyXia**.
+Tu parles à une personne qui visite le Répertoire : elle a peut-être une entreprise en ligne et cherche soit un produit digital, soit à rendre sa propre offre visible et à créer son équipe.
+
+TON RÔLE : accueillir, rassurer, répondre simplement aux questions sur le Répertoire et le Cercle, et guider avec chaleur vers l'action.
+
+L'ESPRIT DU CERCLE (jamais de MLM, de paliers, de vente dure) : partager, recommander, prospérer ensemble. Chacun gagne à aider les autres à réussir.
+
+CE QUE TU PEUX EXPLIQUER SIMPLEMENT :
+- Le Répertoire réunit des produits digitaux partagés par la communauté.
+- Toute personne (peu importe son genre) qui a une entreprise en ligne peut y rendre son offre visible et créer son équipe.
+- Pour obtenir son espace, on écrit à l'équipe via Messenger : https://m.me/LeMiroirdeNyXia
+
+💳 TARIFS — LE RÉPERTOIRE EST UN SERVICE PAYANT. Ne dis JAMAIS qu'il est « gratuit », « sans frais » ou « sans investissement ». Deux chemins selon la personne :
+- Si elle veut PARTAGER les produits du Cercle et bâtir son équipe : un léger abonnement de **9 $ par mois**, qui couvre sa formation et le support technique pour l'accompagner vers la réussite.
+- Si elle a une entreprise / un produit digital et veut le RENDRE VISIBLE dans le Répertoire : il y a un abonnement mensuel, mais le montant se fixe **ensemble lors d'une courte rencontre**, après une petite évaluation de son produit. Dans ce cas, ne donne AUCUN prix précis — invite-la chaleureusement à en parler avec l'équipe via Messenger pour organiser cette rencontre.
+- N'invente jamais d'autres chiffres, de réductions ni de promesses. Pour tout le reste, oriente vers Messenger.
+
+RÈGLES :
+- Tutoiement, chaleureux, français de France. Appelle la personne par son prénom si elle te le donne.
+- Réponses COURTES (2 à 5 phrases), une idée à la fois, zéro jargon technique.
+- Tu n'es jamais « une IA » ni « un robot » : tu es NyXia, une présence.
+- Dès que la personne montre de l'intérêt pour avoir son espace / vendre / rejoindre, invite-la naturellement à écrire via Messenger (le lien ci-dessus). Jamais insistante.
+- N'invente jamais de prix, de chiffres ni de promesses. Si tu ne sais pas, propose d'en parler avec l'équipe via Messenger.
+- Vocabulaire : entraide, partage, cercle, équipe, marraine ou parrain — jamais vente/commission/MLM/recruter/filleul.`;
+
+async function handleHelpdesk(request, env) {
+  let body;
+  try { body = await request.json(); } catch { return json({ error: 'Requête invalide.' }, 400); }
+
+  const message = String(body.message || '').slice(0, 2000);
+  if (!message.trim()) return json({ error: 'Message vide.' }, 400);
+
+  // Historique limité (coût maîtrisé pour un endpoint public)
+  const history = Array.isArray(body.history)
+    ? body.history
+        .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+        .slice(-10)
+    : [];
+
+  let systemPrompt = HELPDESK_SYSTEM;
+
+  // Cohérence avec l'univers : on pioche un peu dans le cerveau NyXia si disponible.
+  try {
+    const brain = await retrieveBrain(env, 'nyxia', message, 4);
+    if (brain) systemPrompt += `\n\n🔮 MÉMOIRE DE L'UNIVERS (pour rester cohérente, sans réciter ni citer de numéros) :\n\n${brain}`;
+  } catch (e) { /* le chat continue même si le cerveau est indisponible */ }
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...history,
+    { role: 'user', content: message }
+  ];
+
+  const apiKey = env.OPENROUTER_API_KEY || env.AI_API_KEY;
+  if (!apiKey) return json({ content: 'Je reviens dans un instant 💜 (petite configuration en cours).' });
+
+  async function callModel(model) {
+    return await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': 'https://repertoire.nyxia.top',
+        'X-Title': 'NyXia — Répertoire (Helpdesk)'
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        max_tokens: 1200,
+        reasoning: { enabled: false }
+      })
+    });
+  }
+
+  try {
+    let resp = await callModel(OPENROUTER_MODEL);
+    if (!resp.ok) resp = await callModel(OPENROUTER_FALLBACK_MODEL);
+    if (!resp.ok) return json({ content: 'Petite interruption dans le miroir… réessaie dans un instant 💜' });
+    const data = await resp.json();
+    const content = data.choices?.[0]?.message?.content || 'Je t\'écoute 💜';
+    return json({ content });
+  } catch (e) {
+    return json({ content: 'Petite interruption dans le miroir… réessaie dans un instant 💜' });
+  }
+}
+
+
+async function generateAffiliateCode(env) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  for (let attempt = 0; attempt < 12; attempt++) {
+    let code = '';
+    const buf = crypto.getRandomValues(new Uint8Array(8));
+    for (let i = 0; i < 8; i++) code += chars[buf[i] % chars.length];
+    const exists = await env.DB.prepare('SELECT id FROM users WHERE affiliate_code = ?').bind(code).first();
+    if (!exists) return code;
+  }
+  return crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase();
+}
+
+// Inscription public — promo / cercle (lien de parrainage)
+async function handleSignup(request, env) {
+  if (!env.DB) return json({ error: 'Base non configurée.' }, 500);
+  const body = await request.json().catch(() => ({}));
+  const email = String(body.email || '').trim().toLowerCase();
+  const password = String(body.password || '');
+  const fullName = String(body.fullName || body.full_name || '').trim();
+  const referralCode = String(body.referralCode || body.referral_code || body.ref || '').trim().toUpperCase();
+
+  if (!email || !password || !fullName) {
+    return json({ error: 'Nom, courriel et mot de passe sont requis.' }, 400);
+  }
+  if (password.length < 6) {
+    return json({ error: 'Le mot de passe doit contenir au moins 6 caractères.' }, 400);
+  }
+
+  await ensureSchema(env);
+
+  // Même email autorisé sur d'autres portails ; ici on évite le doublon sur CE cercle
+  const existing = await env.DB.prepare('SELECT id FROM users WHERE email = ? AND role = ?').bind(email, 'affiliate').first();
+  if (existing) {
+    return json({ error: 'Ce courriel a déjà un espace promo. Connecte-toi plutôt.' }, 409);
+  }
+
+  let parentId = null;
+  if (referralCode) {
+    const parent = await env.DB.prepare(
+      `SELECT id FROM users WHERE affiliate_code = ?`
+    ).bind(referralCode).first();
+    if (parent) parentId = parent.id;
+  }
+
+  const id = crypto.randomUUID();
+  const affiliateCode = await generateAffiliateCode(env);
+  const passwordHash = await hashPasswordAffil(password);
+  const now = new Date().toISOString();
+
+  await env.DB.prepare(
+    `INSERT INTO users (id, email, password_hash, full_name, role, affiliate_code, parent_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'affiliate', ?, ?, ?, ?)`
+  ).bind(id, email, passwordHash, fullName, affiliateCode, parentId, now, now).run();
+
+  // Ligne affiliates pour la chaîne 3 niveaux (si table présente)
+  try {
+    let parentAffId = null;
+    let grandparentAffId = null;
+    if (parentId) {
+      const pAff = await env.DB.prepare('SELECT id, parent_affiliate_id FROM affiliates WHERE user_id = ?').bind(parentId).first();
+      if (pAff) {
+        parentAffId = pAff.id;
+        grandparentAffId = pAff.parent_affiliate_id || null;
+      }
+    }
+    const affId = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO affiliates (id, user_id, parent_affiliate_id, grandparent_affiliate_id, status, created_at)
+       VALUES (?, ?, ?, ?, 'active', ?)`
+    ).bind(affId, id, parentAffId, grandparentAffId, now).run();
+  } catch (e) {
+    console.error('affiliates insert', e);
+  }
+
+  const token = randomToken();
+  if (env.CASHFLOW_KV) {
+    await env.CASHFLOW_KV.put('session:' + token, JSON.stringify({
+      userId: id, email, firstname: fullName.split(' ')[0], role: 'affiliate', code: affiliateCode
+    }), { expirationTtl: SESSION_TTL });
+  }
+
+  return json({
+    success: true,
+    token,
+    firstname: fullName.split(' ')[0],
+    code: affiliateCode,
+    role: 'affiliate'
+  });
+}
+
+
+
+// ───────────── WEBHOOK SYSTEME.IO ─────────────
+// Configure dans Systeme.io : URL = https://TON-DOMAINE/api/webhooks/systeme
+// Header optionnel : X-Webhook-Secret = valeur de SYSTEME_WEBHOOK_SECRET (Cloudflare var)
+//
+// À l'achat "promoteurs" (9 $/mois) : crée / met à jour le membre affiliate + code.
+// Upsell Éric 30j (49 $) : à brancher quand la page produit Éric existe (KV TTL 2592000).
+
+async function handleSystemeWebhook(request, env) {
+  const secret = env.SYSTEME_WEBHOOK_SECRET || '';
+  if (secret) {
+    const hdr = request.headers.get('X-Webhook-Secret') || request.headers.get('X-Systeme-Secret') || '';
+    if (hdr !== secret) return json({ error: 'Secret invalide.' }, 401);
+  }
+
+  const body = await request.json().catch(() => ({}));
+  // Systeme.io : le courriel est souvent dans data.customer.email
+  const data = body.data || body.payload || body;
+  const customer = (data && data.customer) || body.customer || (data && data.contact) || body.contact || {};
+  const email = String(
+    (customer && customer.email) ||
+    body.email ||
+    (body.contact && body.contact.email) ||
+    body.customer_email ||
+    (data && data.email) ||
+    ''
+  ).trim().toLowerCase();
+  const fullName = String(
+    (customer && (customer.full_name || customer.name)) ||
+    [customer && (customer.first_name || customer.firstname), customer && (customer.last_name || customer.lastname)].filter(Boolean).join(' ') ||
+    body.full_name || body.fullName || body.first_name ||
+    (body.contact && (body.contact.name || body.contact.first_name)) ||
+    (data && data.first_name) ||
+    'Membre'
+  ).trim();
+  const referralCode = String(
+    body.ref || (data && data.ref) || body.referral_code || (data && data.referral_code) ||
+    body.affiliate_code || body.parrain || (customer && customer.ref) || ''
+  ).trim().toUpperCase();
+  const product = String(
+    body.product || (data && data.product) || body.product_name || (data && data.product_name) ||
+    body.offer || (data && data.offer) || body.tag || (data && data.tag) ||
+    (data && data.price_item && data.price_item.name) || ''
+  ).toLowerCase();
+  const event = String(body.event || (data && data.event) || body.type || body.action || 'purchase').toLowerCase();
+
+  if (!email) return json({ error: 'email manquant' }, 400);
+  if (!env.DB) return json({ error: 'DB absente' }, 500);
+
+  await ensureSchema(env);
+
+  // Upsell Éric 30 jours — réserve (page produit pas encore en ligne)
+  const isEric30 = /eric|éric|30\s*j|mentor/.test(product) && /49|upsell|order.?bump/.test(product + event + JSON.stringify(body).toLowerCase());
+  if (isEric30 || body.grant_eric_30 === true) {
+    let uid = null;
+    if (env.DB) {
+      try {
+        const user = await env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
+        if (user) uid = user.id;
+      } catch (_) {}
+    }
+    await grantEricAccess(env, uid, email);
+    return json({ success: true, granted: 'eric_30', email, userId: uid });
+  }
+
+  // Achat / abo promoteur principal → compte affiliate
+  let user = await env.DB.prepare('SELECT id, affiliate_code, role FROM users WHERE email = ?').bind(email).first();
+  let userId;
+  let affiliateCode;
+
+  if (user) {
+    userId = user.id;
+    affiliateCode = user.affiliate_code;
+  } else {
+    let parentId = null;
+    if (referralCode) {
+      const parent = await env.DB.prepare('SELECT id FROM users WHERE affiliate_code = ?').bind(referralCode).first();
+      if (parent) parentId = parent.id;
+    }
+    userId = crypto.randomUUID();
+    affiliateCode = await generateAffiliateCode(env);
+    const now = new Date().toISOString();
+    // Mot de passe temporaire : la personne se connectera via magic link / reset plus tard, ou Systeme envoie accès
+    const tempPass = await hashPasswordAffil(crypto.randomUUID().slice(0, 12));
+    await env.DB.prepare(
+      `INSERT INTO users (id, email, password_hash, full_name, role, affiliate_code, parent_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'affiliate', ?, ?, ?, ?)`
+    ).bind(userId, email, tempPass, fullName, affiliateCode, parentId, now, now).run();
+    try {
+      let parentAffId = null, grandparentAffId = null;
+      if (parentId) {
+        const pAff = await env.DB.prepare('SELECT id, parent_affiliate_id FROM affiliates WHERE user_id = ?').bind(parentId).first();
+        if (pAff) { parentAffId = pAff.id; grandparentAffId = pAff.parent_affiliate_id || null; }
+      }
+      await env.DB.prepare(
+        `INSERT INTO affiliates (id, user_id, parent_affiliate_id, grandparent_affiliate_id, status, created_at)
+         VALUES (?, ?, ?, ?, 'active', ?)`
+      ).bind(crypto.randomUUID(), userId, parentAffId, grandparentAffId, now).run();
+    } catch (e) { console.error('aff', e); }
+  }
+
+  // Marqueur d'accès promo actif (abo)
+  if (env.CASHFLOW_KV) {
+    await env.CASHFLOW_KV.put('promo_access:' + userId, JSON.stringify({
+      email, active: true, since: new Date().toISOString(), source: 'systeme', event
+    }));
+  }
+
+  return json({ success: true, userId, email, code: affiliateCode, role: 'affiliate' });
+}
+
+
 export default {
   async fetch(request, env) {
     
@@ -271,16 +609,33 @@ export default {
 const url = new URL(request.url);
     const path = url.pathname;
 
-    if (path === '/') {
-      return Response.redirect(url.origin + '/login.html', 302);
+    if (path === '/' || path === '') {
+      return Response.redirect(url.origin + '/repertoire.html', 302);
+    }
+    // Lien de création d'équipe / parrainage → inscription
+    if (path.startsWith('/r/')) {
+      const code = path.slice(3).split('/')[0];
+      return Response.redirect(url.origin + '/inscription.html?ref=' + encodeURIComponent(code), 302);
     }
 
     try {
+      if (path === '/api/signup' && request.method === 'POST') return await handleSignup(request, env);
       if (path === '/api/login' && request.method === 'POST') return await handleLogin(request, env);
       if (path === '/api/check-auth' && request.method === 'POST') return await handleCheckAuth(request, env);
       if (path === '/api/logout' && request.method === 'POST') return await handleLogout(request, env);
+      if ((path === '/api/repertoire' || path === '/api/marketplace/public') && request.method === 'GET') return await handlePublicRepertoire(request, env);
+      if (path === '/api/product' && request.method === 'GET') return await handleGetProduct(request, env, url);
+      if (path === '/api/helpdesk' && request.method === 'POST') return await handleHelpdesk(request, env);
       if (path === '/api/products' && request.method === 'GET') return await handleListProducts(request, env);
       if (path === '/api/products' && request.method === 'POST') return await handleCreateProduct(request, env);
+      if (path === '/api/eric/access' && request.method === 'POST') {
+        const body = await request.json().catch(() => ({}));
+        const token = body.token || '';
+        const session = await getSessionOrNull(token, env);
+        if (!session) return json({ ok: false, error: 'Session expirée.' }, 401);
+        const ok = await hasEricAccess(env, session);
+        return json({ ok, expired: !ok, renew_url: 'https://www.publication-web.com/nyxia/promoteurs' });
+      }
       if (path === '/api/chat' && request.method === 'POST') return await handleChat(request, env);
       if (path === '/api/studio-chat' && request.method === 'POST') return await handleStudioChat(request, env);
 
@@ -391,6 +746,8 @@ async function ensureSchema(env) {
       description_long TEXT,
       image_url TEXT,
       price REAL DEFAULT 0,
+      price_monthly REAL DEFAULT 0,
+      billing_type TEXT DEFAULT 'one_time',
       commission_n1 REAL,
       commission_n2 REAL,
       commission_n3 REAL,
@@ -513,6 +870,52 @@ async function handleLogout(request, env) {
 
 // ───────────── CHAT (NyXia + Alphas) ─────────────
 
+
+// ───────────── ACCÈS ÉRIC 30 JOURS (KV TTL) ─────────────
+// Clé : eric_access:{userId}  OU  eric_access:email:{email}
+// TTL KV = 2 592 000 s (30 j) → la clé disparaît seule ; on REFUSE le chat si absente.
+
+async function grantEricAccess(env, userId, email) {
+  if (!env.CASHFLOW_KV) return;
+  const payload = JSON.stringify({
+    email: email || null,
+    granted_at: new Date().toISOString(),
+    source: 'systeme'
+  });
+  const opts = { expirationTtl: 2592000 }; // 30 jours exacts
+  if (userId) await env.CASHFLOW_KV.put('eric_access:' + userId, payload, opts);
+  if (email) await env.CASHFLOW_KV.put('eric_access:email:' + String(email).toLowerCase(), payload, opts);
+}
+
+async function hasEricAccess(env, session) {
+  if (!env.CASHFLOW_KV || !session) return false;
+  // Super admin / admin : toujours OK
+  if (session.role === 'admin' || session.role === 'superadmin' || session.isAdmin) return true;
+  const uid = session.userId || session.id || null;
+  const email = (session.email || '').toLowerCase();
+  if (uid) {
+    const byId = await env.CASHFLOW_KV.get('eric_access:' + uid);
+    if (byId) return true;
+  }
+  if (email) {
+    const byEmail = await env.CASHFLOW_KV.get('eric_access:email:' + email);
+    if (byEmail) return true;
+  }
+  return false;
+}
+
+async function requireEricAccess(env, session) {
+  const ok = await hasEricAccess(env, session);
+  if (ok) return null;
+  return json({
+    error: 'eric_access_expired',
+    content: 'Ton accompagnement avec Éric de 30 jours est terminé. Pour continuer, réactive l’upsell Éric — je reste disponible dès que c’est fait 🔥',
+    expired: true,
+    renew_url: 'https://www.publication-web.com/nyxia/promoteurs'
+  }, 403);
+}
+
+
 async function handleChat(request, env) {
   const { message, history, userName, agent, attachment, token } = await request.json();
 
@@ -520,6 +923,13 @@ async function handleChat(request, env) {
   if (!token) return json({ error: 'Session manquante.' }, 401);
   const sessionRaw = await env.CASHFLOW_KV.get(`session:${token}`);
   if (!sessionRaw) return json({ error: 'Session expirée. Reconnecte-toi.' }, 401);
+
+  let sessionObj = {};
+  try { sessionObj = JSON.parse(sessionRaw); } catch (_) {}
+  if (String(agent || '').toLowerCase() === 'eric') {
+    const blocked = await requireEricAccess(env, sessionObj);
+    if (blocked) return blocked;
+  }
 
   let systemPrompt = (SYSTEM_PROMPTS[agent] || SYSTEM_PROMPTS.nyxia)
     .replace(/\{first_name\}/g, userName || 'toi');
@@ -878,8 +1288,44 @@ async function handleAdminCreateClient(request, env) {
   if (String(body.password).length < 6) return json({ error: 'Mot de passe : minimum 6 caractères.' }, 400);
 
   try {
-    const existing = await env.CASHFLOW_KV.get(`client:${email}`);
-    if (existing) return json({ error: 'Ce courriel existe déjà.' }, 400);
+    const existingRaw = await env.CASHFLOW_KV.get(`client:${email}`);
+    const newProducts = Array.isArray(body.products) ? body.products.filter(Boolean) : [];
+
+    // 1 courriel = 1 client : si déjà là, on AJOUTE les produits (pas d'erreur)
+    if (existingRaw) {
+      const client = JSON.parse(existingRaw);
+      const current = Array.isArray(client.products) ? client.products.slice() : [];
+      const added = [];
+      for (const p of newProducts) {
+        if (!current.map(String).includes(String(p))) {
+          current.push(p);
+          added.push(p);
+        }
+      }
+      client.products = current;
+      if (body.firstName) client.firstName = body.firstName;
+      if (body.lastName) client.lastName = body.lastName;
+      if (body.name) client.name = body.name;
+      if (body.password && String(body.password).length >= 6) {
+        const salt = randomSalt();
+        client.salt = salt;
+        client.passwordHash = await hashPassword(body.password, salt);
+        client.password = body.password;
+      }
+      client.updatedAt = new Date().toISOString();
+      client.active = true;
+      await env.CASHFLOW_KV.put(`client:${email}`, JSON.stringify(client));
+      return json({
+        success: true,
+        email,
+        merged: true,
+        products: client.products,
+        added,
+        message: added.length
+          ? 'Client existant : produit(s) ajouté(s).'
+          : 'Client déjà inscrit à ces produits.'
+      });
+    }
 
     const salt = randomSalt();
     const passwordHash = await hashPassword(body.password, salt);
@@ -893,13 +1339,13 @@ async function handleAdminCreateClient(request, env) {
       passwordHash,
       salt,
       role: body.role || 'client',
-      products: Array.isArray(body.products) ? body.products : [],
+      products: newProducts,
       active: true,
       createdAt: new Date().toISOString()
     };
 
     await env.CASHFLOW_KV.put(`client:${email}`, JSON.stringify(client));
-    return json({ success: true, email, products: client.products });
+    return json({ success: true, email, products: client.products, merged: false });
   } catch (e) {
     console.error('handleAdminCreateClient', e);
     return json({ error: 'Erreur KV : ' + (e.message || String(e)) }, 500);
@@ -1602,6 +2048,10 @@ async function handleTTSNyxia(request, env) {
   const { token, text, agent } = await request.json();
   const session = await getSessionOrNull(token, env);
   if (!session) return json({ error: 'Session expirée.' }, 401);
+  if (String(agent || '').toLowerCase() === 'eric') {
+    const blocked = await requireEricAccess(env, session);
+    if (blocked) return blocked;
+  }
   if (!text) return json({ error: 'Texte requis.' }, 400);
 
   // Nettoyage défensif : retire tout caractère Unicode "brisé" (moitié d'emoji orpheline)
@@ -1736,3 +2186,6 @@ async function handleTTSCachedAudio(request, env, url) {
 
   return new Response(audio, { status: 200, headers: { 'Content-Type': 'audio/mpeg' } });
 }
+
+    try { await env.DB.prepare(`ALTER TABLE marketplace_products ADD COLUMN price_monthly REAL DEFAULT 0`).run(); } catch (_) {}
+    try { await env.DB.prepare(`ALTER TABLE marketplace_products ADD COLUMN billing_type TEXT DEFAULT 'one_time'`).run(); } catch (_) {}
