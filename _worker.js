@@ -207,6 +207,63 @@ async function verifyPassword(password, salt, hash) {
 
 // ───────────── ROUTAGE PRINCIPAL ─────────────
 
+
+// ───────────── MARKETPLACE PRODUITS (D1) ─────────────
+async function handleListProducts(request, env) {
+  if (!env.DB) return json({ products: [] });
+  try {
+    await ensureSchema(env);
+    const { results } = await env.DB.prepare(
+      `SELECT id, title, description_short, price, status, image_url, promo_code, commission_n1, commission_n2, commission_n3, created_at
+       FROM marketplace_products ORDER BY created_at DESC LIMIT 200`
+    ).all();
+    return json({ products: results || [] });
+  } catch (e) {
+    console.error('list products', e);
+    return json({ products: [], error: String(e.message || e) });
+  }
+}
+
+async function handleCreateProduct(request, env) {
+  if (!env.DB) return json({ error: 'Base non configurée.' }, 500);
+  const body = await request.json().catch(() => ({}));
+  const token = body.token || request.headers.get('X-Cercle-Token');
+  let sellerId = null;
+  if (token) {
+    const raw = await env.CASHFLOW_KV.get('session:' + token);
+    if (raw) {
+      try { sellerId = JSON.parse(raw).userId || null; } catch (_) {}
+    }
+  }
+  const title = (body.title || '').trim();
+  if (!title) return json({ error: 'Titre requis.' }, 400);
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const status = body.status === 'active' || body.status === 'published' ? 'active' : 'draft';
+  await ensureSchema(env);
+  await env.DB.prepare(
+    `INSERT INTO marketplace_products
+     (id, seller_id, title, description_short, image_url, price, commission_n1, commission_n2, commission_n3, affiliate_link, promo_code, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    id,
+    sellerId,
+    title,
+    (body.description || body.description_short || '').trim(),
+    (body.imageUrl || body.image_url || '').trim() || null,
+    Number(body.price || 0),
+    body.commission_n1 != null ? Number(body.commission_n1) : null,
+    body.commission_n2 != null ? Number(body.commission_n2) : null,
+    body.commission_n3 != null ? Number(body.commission_n3) : null,
+    (body.affiliateLink || body.affiliate_link || '').trim() || null,
+    (body.promoCode || body.promo_code || '').trim() || null,
+    status,
+    now,
+    now
+  ).run();
+  return json({ success: true, id, status });
+}
+
 export default {
   async fetch(request, env) {
     
@@ -222,6 +279,8 @@ const url = new URL(request.url);
       if (path === '/api/login' && request.method === 'POST') return await handleLogin(request, env);
       if (path === '/api/check-auth' && request.method === 'POST') return await handleCheckAuth(request, env);
       if (path === '/api/logout' && request.method === 'POST') return await handleLogout(request, env);
+      if (path === '/api/products' && request.method === 'GET') return await handleListProducts(request, env);
+      if (path === '/api/products' && request.method === 'POST') return await handleCreateProduct(request, env);
       if (path === '/api/chat' && request.method === 'POST') return await handleChat(request, env);
       if (path === '/api/studio-chat' && request.method === 'POST') return await handleStudioChat(request, env);
 
