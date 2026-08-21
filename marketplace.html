@@ -63,7 +63,7 @@ function money(n){ return Number(n||0).toLocaleString('fr-CA',{minimumFractionDi
   <div class="top-row">
     <div>
       <h1>Marketplace</h1>
-      <p class="sub">Gérez vos produits sur le Marketplace — relié à la base D1 Cercles</p>
+      <p class="sub">Vos produits uniquement. Toute création part en <strong>brouillon</strong> jusqu’à validation par le Super Admin.</p>
     </div>
     <button type="button" class="btn" onclick="toggleForm(true)">+ Ajouter un produit</button>
   </div>
@@ -94,11 +94,13 @@ function money(n){ return Number(n||0).toLocaleString('fr-CA',{minimumFractionDi
           <option value="paid">Payant</option>
         </select>
       </div>
-      <div><label>Lien « Rejoindre le cercle »</label><input id="p-join-url" placeholder="https://… inscription cercle"></div>
+      <div style="grid-column:1/-1"><label>Lien « Rejoindre le cercle »</label>
+        <input id="p-join-url" placeholder="Laissé vide = généré auto (répertoire + ton code parrain)">
+        <div style="font-size:11px;color:var(--t3);margin-top:4px">Automatique si vide : https://repertoire.nyxia.top/?product=…&amp;ref=TON_CODE</div>
+      </div>
       <div><label>Statut</label>
-        <select id="p-status">
-          <option value="draft">Brouillon</option>
-          <option value="active">Publié</option>
+        <select id="p-status" disabled title="Publication réservée au Super Admin">
+          <option value="draft" selected>Brouillon — en attente Super Admin</option>
         </select>
       </div>
       <div><label>Commission N1 %</label><input id="p-c1" type="number" step="0.01" placeholder="ex: 25"></div>
