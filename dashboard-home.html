@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="fr"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dashboard — Le Cercle</title>
+<title>Dashboard Admin — Cercle NyXia</title>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg1:#0A1628;--card:rgba(123,92,255,.06);--border:rgba(123,92,255,.15);--p:#7B5CFF;--p2:#5A6CFF;--t:#fff;--t2:#D6D9F0;--t3:#8891B8;--t4:#4a5278;--green:#00E676;--gold:#F4C842;--pink:#E040FB}
@@ -11,67 +11,99 @@ body{font-family:Outfit,sans-serif;background:var(--bg1);color:var(--t2);padding
 h1{font-family:'Space Grotesk',sans-serif;font-size:24px;color:#fff;margin-bottom:4px}
 .sub{color:var(--t3);font-size:13px;margin-bottom:18px}
 .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:16px 0}
-@media(max-width:800px){.stats{grid-template-columns:1fr 1fr}}
+@media(max-width:900px){.stats{grid-template-columns:1fr 1fr}}
 .stat{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px 12px;text-align:center}
 .stat .ico{font-size:18px;margin-bottom:6px}
 .stat b{display:block;font-size:22px;color:#fff;font-family:'Space Grotesk',sans-serif}
 .stat.money b{color:var(--green)}.stat.pending b{color:var(--gold)}.stat.paid b{color:var(--pink)}
 .stat span{font-size:12px;color:var(--t3)}
-.empty{text-align:center;color:var(--t3);padding:40px 12px;font-size:14px}
-.empty small{display:block;margin-top:6px;font-size:12px;color:var(--t4)}
-.lien-box{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px 18px;display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.empty{text-align:center;color:var(--t3);padding:28px 12px;font-size:14px}
+.lien-box{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px 18px;display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
 .lien-box .meta{flex:1;min-width:0}.lien-box .lbl{font-size:12px;color:var(--t3);margin-bottom:4px}
 .lien-box code{font-size:13px;color:#fff;word-break:break-all}
 .btn{padding:10px 16px;border-radius:12px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:linear-gradient(135deg,var(--p),var(--p2));color:#fff;font-family:Outfit,sans-serif;white-space:nowrap}
 .btn-ghost{background:rgba(123,92,255,.12);border:1px solid rgba(123,92,255,.25);color:#fff}
-.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-input,select{padding:12px 14px;border-radius:12px;border:1px solid rgba(123,92,255,.2);background:rgba(15,28,63,.5);color:#fff;font-family:Outfit,sans-serif;font-size:13px;outline:none}
-.search{border-radius:50px;max-width:280px}
-.top-row{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:16px}
-.mkt-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0}
+.mkt-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:12px}
 @media(max-width:700px){.mkt-stats{grid-template-columns:1fr 1fr}}
-.chip{padding:6px 12px;border-radius:50px;border:1px solid rgba(123,92,255,.2);background:transparent;color:var(--t3);font-size:12px;cursor:pointer}
-.chip.active{background:rgba(123,92,255,.2);color:#fff}
 </style>
 <script>
 var TOKEN=sessionStorage.getItem('nyxia_token')||'';
-async function api(p,m,b){var o={method:m||'GET',headers:{'Content-Type':'application/json','X-Cercle-Token':TOKEN}};if(b)o.body=JSON.stringify(b);var r=await fetch(p,o);return r.json().catch(function(){return{}})}
+async function api(p,m,b){
+  var o={method:m||'GET',headers:{'Content-Type':'application/json','X-Cercle-Token':TOKEN}};
+  if(b)o.body=JSON.stringify(Object.assign({token:TOKEN},b||{}));
+  else if(m==='POST')o.body=JSON.stringify({token:TOKEN});
+  var r=await fetch(p,o);
+  return r.json().catch(function(){return{}});
+}
 function money(n){return Number(n||0).toLocaleString('fr-CA',{minimumFractionDigits:2,maximumFractionDigits:2})+' $'}
 </script>
 </head><body>
-
 <div style="max-width:1100px;margin:0 auto">
   <h1 id="hello">Bienvenue</h1>
-  <p class="sub">Fais rayonner ta présence sur le Marketplace</p>
+  <p class="sub">Vue Admin commerçant — produits, cercle et revenus</p>
+
   <div class="lien-box">
     <div class="meta">
       <div class="lbl">Ton lien de création d’équipe</div>
       <code id="lien">—</code>
     </div>
-    <button type="button" class="btn btn-ghost" onclick="var t=document.getElementById('lien').textContent;if(t&&t!=='—')navigator.clipboard.writeText(t)">⧉</button>
+    <button type="button" class="btn btn-ghost" id="copy">Copier</button>
   </div>
+
   <div class="stats">
-    <div class="stat"><div class="ico">👥</div><b id="s-cercle">0</b><span>Cercle</span></div>
-    <div class="stat"><div class="ico">🛒</div><b id="s-ventes">0</b><span>Ventes</span></div>
-    <div class="stat money"><div class="ico">$</div><b id="s-revenus">0,00 $</b><span>Revenus</span></div>
-    <div class="stat pending"><div class="ico">⏱</div><b id="s-apayer">0,00 $</b><span>À payer</span></div>
+    <div class="stat"><div class="ico">📦</div><b id="s-prod">0</b><span>Tes produits</span></div>
+    <div class="stat"><div class="ico">✓</div><b id="s-pub" style="color:var(--green)">0</b><span>Publiés</span></div>
+    <div class="stat"><div class="ico">📝</div><b id="s-draft" style="color:var(--gold)">0</b><span>Brouillons</span></div>
+    <div class="stat"><div class="ico">👥</div><b id="s-cercle">0</b><span>Ton cercle</span></div>
+    <div class="stat"><div class="ico">👁</div><b id="s-clics">0</b><span>Clics</span></div>
+  </div>
+
+  <div class="stats" style="grid-template-columns:repeat(3,1fr)">
+    <div class="stat money"><div class="ico">$</div><b id="s-revenus">0,00 $</b><span>Revenus (payés)</span></div>
+    <div class="stat pending"><div class="ico">⏱</div><b id="s-apayer">0,00 $</b><span>À payer / en attente</span></div>
     <div class="stat paid"><div class="ico">💳</div><b id="s-payes">0,00 $</b><span>Payés</span></div>
   </div>
+
   <div class="card">
-    <div style="font-weight:600;color:#fff;margin-bottom:8px">🛒 Dernières ventes</div>
-    <div class="empty">Aucune vente</div>
+    <div style="font-weight:600;color:#fff;margin-bottom:8px">Aperçu</div>
+    <p class="sub" style="margin:0" id="apercu">Chargement des stats…</p>
   </div>
 </div>
 <script>
 (async function(){
+  var code = '';
   try{
-    var d=await api('/api/check-auth','POST',{token:TOKEN});
-    if(d.firstname) document.getElementById('hello').textContent='Bienvenue, '+d.firstname+' 👋';
-    if(d.code) document.getElementById('lien').textContent='https://nyxia.top/'+d.code;
+    var d = await api('/api/check-auth','POST',{token:TOKEN});
+    if(d.firstname) document.getElementById('hello').textContent = 'Bienvenue, ' + d.firstname + ' 👋';
+    code = d.code || d.affiliate_code || '';
   }catch(e){}
-  document.getElementById('s-revenus').textContent=money(0);
-  document.getElementById('s-apayer').textContent=money(0);
-  document.getElementById('s-payes').textContent=money(0);
+
+  var lien = code ? ('https://nyxia.top/r/' + code) : '—';
+  document.getElementById('lien').textContent = lien;
+  document.getElementById('copy').onclick = function(){
+    if(code) navigator.clipboard.writeText(lien);
+  };
+
+  try{
+    var st = await api('/api/stats','POST',{token:TOKEN});
+    document.getElementById('s-prod').textContent = String(st.products_total||0);
+    document.getElementById('s-pub').textContent = String(st.products_active||0);
+    document.getElementById('s-draft').textContent = String(st.products_draft||0);
+    document.getElementById('s-cercle').textContent = String(st.team_total||st.team_n1||0);
+    document.getElementById('s-clics').textContent = String(st.clicks||0);
+    document.getElementById('s-revenus').textContent = money(st.gains||0);
+    document.getElementById('s-apayer').textContent = money(st.pending||0);
+    document.getElementById('s-payes').textContent = money(st.gains||0);
+    document.getElementById('apercu').textContent =
+      (st.products_draft > 0)
+        ? (st.products_draft + ' produit(s) en attente de validation Super Admin.')
+        : 'Tes stats se mettent à jour avec les clics, le cercle et les commissions.';
+  }catch(e){
+    document.getElementById('apercu').textContent = 'Stats indisponibles pour le moment.';
+    document.getElementById('s-revenus').textContent = money(0);
+    document.getElementById('s-apayer').textContent = money(0);
+    document.getElementById('s-payes').textContent = money(0);
+  }
 })();
 </script>
 </body></html>
