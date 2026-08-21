@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <link rel="icon" type="image/png" href="/FavIcon.png">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NyXia — Cercle</title>
+  <title>NyXia · Le Cercle</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -246,10 +246,10 @@
       </div>
     </div>
     <div class="header-center">
-      <div class="welcome-text">Bienvenue sur le Cercle ✦ <strong id="header-username"></strong></div>
+      <div class="welcome-text">Bienvenue dans Le Cercle ✦ <strong id="header-username"></strong></div>
     </div>
     <div class="header-actions">
-      <span class="btn-header btn-pro">⭐ Cercle</span>
+      <span class="btn-header btn-pro">✦ Le Cercle</span>
       <button class="btn-header btn-logout" onclick="logout()">Déconnexion</button>
     </div>
   </header>
@@ -267,7 +267,7 @@
         </div>
         <div class="nav-item" id="nav-nyxia" onclick="openAgentTab('nyxia')">
           <img class="nav-avatar" src="/NyXia.png" alt="NyXia">
-          <span class="nav-text"><span class="nav-name">NyXia</span><span class="nav-sub">Orientation & technique digitaux</span></span>
+          <span class="nav-text"><span class="nav-name">NyXia</span><span class="nav-sub">Orientation & technique</span></span>
           <span class="nav-arrow">›</span>
         </div>
         <div class="nav-item" id="nav-eric" onclick="openAgentTab('eric')">
@@ -278,128 +278,40 @@
       </div>
       
       <div class="sidebar-divider"></div>
-
       <div class="sidebar-section">
-        <div class="sidebar-label">Mon Cercle</div>
-        <div class="nav-item" id="nav-home" onclick="openPromoPage((sessionStorage.getItem('nyxia_role')||'').toLowerCase()==='admin'||(sessionStorage.getItem('nyxia_role')||'').toLowerCase()==='superadmin'?'/dashboard-home.html':'/promo-home.html')">
-          <span class="nav-icon">📊</span> Tableau de bord <span class="nav-arrow">›</span>
+        <div class="sidebar-label">Espace Cercle</div>
+        <div class="nav-item" id="nav-dashboard" onclick="loadPage('dashboard-home.html','nav-dashboard')">
+          <span class="nav-icon">📊</span> Dashboard <span class="nav-arrow">›</span>
         </div>
-        <div class="nav-item" id="nav-lien" onclick="openPromoPage('/promo-lien.html')">
-          <span class="nav-icon">🔗</span> Mon lien d'équipe <span class="nav-arrow">›</span>
+        <div class="nav-item" id="nav-equipe" onclick="loadPage('cercle.html','nav-equipe')">
+          <span class="nav-icon">👥</span> Mon équipe <span class="nav-arrow">›</span>
         </div>
-        <div class="nav-item" id="nav-phare" onclick="openPromoPage('/promo-phare.html')">
-          <span class="nav-icon">⭐</span> Produit phare <span class="nav-arrow">›</span>
+        <div class="nav-item" id="nav-marketplace" onclick="loadPage('marketplace.html','nav-marketplace')">
+          <span class="nav-icon">🏪</span> Marketplace <span class="nav-arrow">›</span>
         </div>
-        <div class="nav-item" id="nav-rep" onclick="openPromoPage('/promo-repertoire.html')">
-          <span class="nav-icon">📦</span> Produits à partager <span class="nav-arrow">›</span>
+        <div class="nav-item" id="nav-paiement" onclick="loadPage('paiement.html','nav-paiement')">
+          <span class="nav-icon">💳</span> Paiements <span class="nav-arrow">›</span>
         </div>
-      </div>
-
-      <div class="sidebar-section">
-        <div class="sidebar-label">Outils</div>
-        <div class="nav-item" id="nav-messages" onclick="showPanel('messages'); if(typeof loadMessages==='function')loadMessages()">
+        <div class="nav-item" id="nav-messages" onclick="loadPage('messagerie.html','nav-messages')">
           <span class="nav-icon">💬</span> Messagerie <span class="nav-arrow">›</span>
         </div>
-        <div class="nav-item" id="nav-medias" onclick="showPanel('medias')">
-          <span class="nav-icon">✨</span> Banque d'images - Sons et Vidéos <span class="nav-arrow">›</span>
-        </div>
-        <div class="nav-item" id="nav-studio" onclick="window.open('https://repertoire.nyxia.top/repertoire.html','_blank')">
-          <span class="nav-icon">📦</span> Répertoire <span class="nav-arrow">↗</span>
+        <div class="nav-item" id="nav-medias" onclick="loadPage('medias.html','nav-medias')">
+          <span class="nav-icon">🛠️</span> Médias <span class="nav-arrow">›</span>
         </div>
       </div>
-      
       <div class="sidebar-bottom">
         <div class="user-card">
           <div class="user-avatar" id="sidebar-avatar">D</div>
           <div class="user-info">
             <div class="user-name" id="sidebar-username">Chargement...</div>
-            <div class="user-plan">✦ Cercle NyXia</div>
+            <div class="user-plan">✦ Le Cercle</div>
           </div>
         </div>
       </div>
     </aside>
 
     <div class="main-content">
-      <!-- Panel Chat — charge la page individuelle du personnage en iframe -->
-      <div class="panel active" id="panel-chat" style="flex-direction:column">
-        <iframe id="agent-iframe" src="/chat-diane.html" style="width:100%;height:100%;border:none;display:block" title="Conversation"></iframe>
-      </div>
-
-      <!-- Panel Mon Espace — désactivé (ouvre en nouvel onglet) -->
-      <div class="panel" id="panel-miroir" style="flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;gap:16px">
-        <div style="font-size:40px">🪞</div>
-        <div style="color:var(--t2);font-size:16px">Mon Espace s'ouvre dans un nouvel onglet.</div>
-        <a href="https://www.lemiroirnyxia.com/fr/login" target="_blank" rel="noopener" style="padding:10px 22px;border-radius:50px;background:linear-gradient(135deg,#7B5CFF,#5A6CFF);color:#fff;text-decoration:none;font-weight:600;font-size:13px">Ouvrir Mon Espace ↗</a>
-      </div>
-
-      <!-- Panel Journal -->
-      <div class="panel" id="panel-journal" style="flex-direction:column">
-        <div style="flex:1;overflow:hidden;position:relative">
-          <iframe src="/journal-studio.html" style="width:100%;height:100%;border:none;display:block" title="Journal"></iframe>
-        </div>
-      </div>
-
-      <!-- Panel Messagerie interne -->
-      <div class="panel" id="panel-messages" style="flex-direction:column;padding:24px;overflow-y:auto">
-        <div style="max-width:640px;margin:0 auto;width:100%">
-          <h2 style="font-family:'Space Grotesk',sans-serif;font-size:22px;margin-bottom:4px">💌 Messages du Cercle</h2>
-          <p style="color:var(--t3);font-size:13px;margin-bottom:24px">Écris au Super Admin ou à un contact officiel de l'équipe. Les membres ne peuvent pas s'écrire entre eux.</p>
-
-          <div style="background:rgba(123,92,255,0.06);border:1px solid rgba(123,92,255,0.15);border-radius:16px;padding:20px;margin-bottom:24px">
-            <div style="font-weight:600;font-size:13px;margin-bottom:12px">✦ Écrire à l'équipe</div>
-            <select id="msg-recipient" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(123,92,255,0.2);background:rgba(15,28,63,0.5);color:#fff;font-family:'Outfit',sans-serif;font-size:13px;margin-bottom:10px">
-              <option value="">Choisis un destinataire...</option>
-            </select>
-            <input type="text" id="msg-subject" placeholder="Sujet (optionnel)" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(123,92,255,0.2);background:rgba(15,28,63,0.5);color:#fff;font-family:'Outfit',sans-serif;font-size:13px;margin-bottom:10px">
-            <textarea id="msg-body" placeholder="Ton message..." rows="3" style="width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(123,92,255,0.2);background:rgba(15,28,63,0.5);color:#fff;font-family:'Outfit',sans-serif;font-size:13px;resize:vertical;margin-bottom:10px"></textarea>
-            <button onclick="sendGuardienneMessage()" style="padding:10px 20px;border-radius:50px;border:none;background:linear-gradient(135deg,#7B5CFF,#5A6CFF);color:#fff;font-weight:600;font-size:13px;cursor:pointer">Envoyer 💜</button>
-            <span id="msg-send-status" style="margin-left:10px;font-size:12px;color:var(--t3)"></span>
-          </div>
-
-          <div style="font-weight:600;font-size:13px;margin-bottom:12px">📬 Ta boîte de réception</div>
-          <div id="messages-list" style="display:flex;flex-direction:column;gap:10px">
-            <div style="color:var(--t3);font-size:13px">Chargement...</div>
-          </div>
-        </div>
-      </div>
-      <!-- Panel Répertoire des Médias Magiques -->
-      <div class="panel" id="panel-medias" style="flex-direction:column;padding:24px;overflow-y:auto">
-        <div style="max-width:900px;margin:0 auto;width:100%">
-          <h2 style="font-family:'Space Grotesk',sans-serif;font-size:22px;margin-bottom:4px">✨ Répertoire des Médias Magiques</h2>
-          <p style="color:var(--t3);font-size:13px;margin-bottom:20px">Puise des images, vidéos et sons directement dans le Cercle pour habiller tes créations.</p>
-
-          <div style="display:flex;gap:8px;margin-bottom:20px">
-            <button id="media-tab-visual" onclick="switchMediaTab('visual')" style="padding:8px 18px;border-radius:50px;border:1px solid rgba(123,92,255,0.3);background:rgba(123,92,255,0.15);color:#fff;font-weight:600;font-size:13px;cursor:pointer">🎨 Images & Vidéos</button>
-            <button id="media-tab-sound" onclick="switchMediaTab('sound')" style="padding:8px 18px;border-radius:50px;border:1px solid rgba(123,92,255,0.15);background:transparent;color:var(--t3);font-weight:600;font-size:13px;cursor:pointer">🎵 Sons</button>
-          </div>
-
-          <div style="display:flex;gap:8px;margin-bottom:14px" id="media-format-row">
-            <span style="font-size:11px;color:var(--t3);align-self:center;margin-right:4px">Format :</span>
-            <button class="media-format-btn" data-format="" onclick="setMediaFormat('')" style="padding:5px 12px;border-radius:50px;border:1px solid rgba(123,92,255,0.25);background:rgba(123,92,255,0.15);color:#fff;font-size:11px;cursor:pointer">Tous</button>
-            <button class="media-format-btn" data-format="square" onclick="setMediaFormat('square')" style="padding:5px 12px;border-radius:50px;border:1px solid rgba(123,92,255,0.15);background:transparent;color:var(--t3);font-size:11px;cursor:pointer">◻ 1:1</button>
-            <button class="media-format-btn" data-format="portrait" onclick="setMediaFormat('portrait')" style="padding:5px 12px;border-radius:50px;border:1px solid rgba(123,92,255,0.15);background:transparent;color:var(--t3);font-size:11px;cursor:pointer">▯ 9:16</button>
-            <button class="media-format-btn" data-format="landscape" onclick="setMediaFormat('landscape')" style="padding:5px 12px;border-radius:50px;border:1px solid rgba(123,92,255,0.15);background:transparent;color:var(--t3);font-size:11px;cursor:pointer">▭ 16:9</button>
-          </div>
-
-          <div style="display:flex;gap:8px;margin-bottom:20px">
-            <input type="text" id="media-query" placeholder="Que cherches-tu aujourd'hui ? (ex: coucher de soleil, pluie douce...)" style="flex:1;padding:12px 16px;border-radius:12px;border:1px solid rgba(123,92,255,0.2);background:rgba(15,28,63,0.5);color:#fff;font-family:'Outfit',sans-serif;font-size:13px">
-            <button onclick="searchMedias()" style="padding:12px 24px;border-radius:12px;border:none;background:linear-gradient(135deg,#7B5CFF,#5A6CFF);color:#fff;font-weight:600;font-size:13px;cursor:pointer">Chercher ✦</button>
-          </div>
-
-          <div id="media-results" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px"></div>
-        </div>
-      </div>
-
-      <!-- Panel Livres Audio / Mini-formation TikTok -->
-      <div class="panel" id="panel-audiobooks" style="flex-direction:column">
-        <div style="padding:40px;color:#8891b8;font-family:Outfit,sans-serif;text-align:center">Section retirée — utilise les personnages et le Cercle.</div>
-      </div>
-
-      <!-- Panel Cercle — multi-modèles (OpenRouter) -->
-      <div class="panel" id="panel-studio" style="flex-direction:column">
-        <iframe id="studio-iframe" src="/promo-home.html" style="width:100%;height:100%;border:none;display:block" title="Cercle"></iframe>
-      </div>
-
+      <iframe id="main-iframe" src="/chat-diane.html" style="width:100%;height:100%;border:none;display:block" title="Contenu"></iframe>
     </div>
   </div>
 
@@ -451,7 +363,6 @@
         if (!data.valid) { window.location.href = '/login.html'; return }
         clientEmail = data.email || ''
         clientName = localStorage.getItem('nyxia_username') || data.firstname || ''
-        if (data.role) sessionStorage.setItem('nyxia_role', data.role)
         initUI()
       })
       .catch(function() { window.location.href = '/login.html' })
@@ -674,9 +585,7 @@
       var iframe = document.getElementById('studio-iframe')
       if (!iframe) return
       var tok = sessionToken || sessionStorage.getItem('nyxia_token') || ''
-      var role = (sessionStorage.getItem('nyxia_role') || '').toLowerCase()
-      var home = (role === 'admin' || role === 'superadmin') ? '/dashboard-home.html' : '/promo-home.html'
-      var base = home + '?t=' + encodeURIComponent(tok)
+      var base = '/studio-prompt.html?t=' + encodeURIComponent(tok)
       // Recharge seulement si pas encore chargé (évite d'effacer l'état mémoire inutilement ;
       // sessionStorage restaure la conversation de toute façon)
       if (!iframe.getAttribute('data-loaded')) {
@@ -795,8 +704,8 @@
     function sendWelcome() {
       var name = clientName || 'Membre'
       var welcome = '✦ Allô ' + name + ' 💜\n\n' +
-        'Tu n\'es pas ici par hasard. Bienvenue dans ton espace Cercle — ton sanctuaire de travail.\n\n' +
-        'Tu n\'as plus à crier dans le vide ni à déranger tes proches. Je t\'ouvre les portes de nos trois grands Cercles, 88 000 personnes réunies : Les Entrepreneurs du Québec, NyXia, et le [Cercle Magique « L\'âme-agit »](https://www.facebook.com/groups/cerclemagique). C\'est là que tu vas tisser des liens vrais.\n\n' +
+        'Tu n\'es pas ici par hasard. Bienvenue dans ton espace CashFlow — ton sanctuaire de travail.\n\n' +
+        'Tu n\'as plus à crier dans le vide ni à déranger tes proches. Je t\'ouvre les portes de nos trois grands Cercles, 88 000 personnes réunies : Les Entrepreneurs du Québec, CashFlow™, et le [Cercle Magique « L\'âme-agit »](https://www.facebook.com/groups/cerclemagique). C\'est là que tu vas tisser des liens vrais.\n\n' +
         'Dis-moi — as-tu envie qu\'Éric te forme et te donne de quoi publier aujourd\'hui, ou veux-tu d\'abord entendre la vision de Diane ? ✦'
       addBotMessage(welcome)
       addAlphaChoiceButtons()
@@ -804,7 +713,7 @@
 
     var ALPHA_INFO = {
       diane: { name: 'Diane',  icon: '👑', sub: 'La créatrice — présente en clone IA', greeting: '💜 Ah, te voilà. Je suis **Diane** — enfin, ma présence sous forme de clone IA, pour être là avec toi pendant ta formation. Dis-moi ce qui t\'habite aujourd\'hui : l\'envie de comprendre le *pourquoi* derrière tout ça, ou simplement besoin d\'un peu d\'élan ? ✨' },
-      eric:   { name: 'Éric',   icon: '🔥', sub: 'Gardien-formateur du Cercle', greeting: '🔥 Eh bien, eh bien… regarde qui vient de franchir le portail !\n\nMoi, c\'est Éric, le Gardien et formateur du Cercle.\n\nQue souhaites-tu faire maintenant ?\n\n📘 Commencer ta formation sur la communication à l\'ère numérique ;\n📜 Recevoir un parchemin prêt à publier ;\n💬 Me transmettre un commentaire ou un message privé que tu as reçu afin que je t\'aide à préparer une réponse parfaitement adaptée à cette personne.\n\nÉcris simplement :\n👉 « Donne-moi un parchemin »\nou\n👉 « Voici le message que j\'ai reçu : » puis colle le commentaire ou le message privé directement ici.\n\nJe prendrai ensuite le relais pour te guider dans la création d\'une réponse humaine, naturelle et ultra personnalisée. 👑😉' }
+      eric:   { name: 'Éric',   icon: '🔥', sub: 'Gardien-formateur du Portail CashFlow', greeting: '🔥 Eh bien, eh bien… regarde qui vient de franchir le portail !\n\nMoi, c\'est Éric, le Gardien et formateur du Portail CashFlow™.\n\nQue souhaites-tu faire maintenant ?\n\n📘 Commencer ta formation sur la communication à l\'ère numérique ;\n📜 Recevoir un parchemin prêt à publier ;\n💬 Me transmettre un commentaire ou un message privé que tu as reçu afin que je t\'aide à préparer une réponse parfaitement adaptée à cette personne.\n\nÉcris simplement :\n👉 « Donne-moi un parchemin »\nou\n👉 « Voici le message que j\'ai reçu : » puis colle le commentaire ou le message privé directement ici.\n\nJe prendrai ensuite le relais pour te guider dans la création d\'une réponse humaine, naturelle et ultra personnalisée. 👑😉' }
     }
     var AGENT_IMAGES = {
       nyxia: '/NyXia.png',
@@ -886,13 +795,22 @@
     // Accès direct depuis la barre latérale — charge la page individuelle du personnage en iframe.
     // Chaque personnage a sa propre page (chat-eric.html, chat-diane.html, chat-nyxia.html…).
     var AGENT_PAGES = {
-      nyxia:  '/chat-nyxia.html',
-      diane:  '/chat-diane.html',
-      eric:   '/chat-eric.html',
-      kael:   '/chat-kael.html',
-      lena:   '/chat-lena.html',
-      selena: '/chat-selena.html',
-      alex:   '/chat-alex.html'
+      nyxia: '/chat-nyxia.html',
+      diane: '/chat-diane.html',
+      eric:  '/chat-eric.html'
+    }
+    function setActiveNav(navId) {
+      document.querySelectorAll('.nav-item').forEach(function(n){ n.classList.remove('active') })
+      var el = document.getElementById(navId); if (el) el.classList.add('active')
+    }
+    function loadPage(page, navId) {
+      setActiveNav(navId)
+      var iframe = document.getElementById('main-iframe')
+      if (!iframe) return
+      var tok = sessionToken || sessionStorage.getItem('nyxia_token') || ''
+      iframe.src = page + (page.indexOf('?')>=0?'&':'?') + 't=' + encodeURIComponent(tok) + '&_=' + Date.now()
+      iframe.removeAttribute('data-agent')
+      if (typeof closeMobileMenu==='function') closeMobileMenu()
     }
 
     function openAgentTab(key) {
@@ -907,7 +825,7 @@
       if (navEl) navEl.classList.add('active')
 
       // Charge la page du personnage dans l'iframe
-      var iframe = document.getElementById('agent-iframe')
+      var iframe = document.getElementById('main-iframe')
       var page = AGENT_PAGES[key] || AGENT_PAGES.nyxia
       if (iframe) {
         var tok = sessionToken || sessionStorage.getItem('nyxia_token') || ''
@@ -1198,7 +1116,7 @@
     var AGENT_WELCOME_AUDIO = {
       nyxia: '/AccueilNyXiaClientes.mp3',
       diane: '/Bienvenue_Diane.mp3',   // 👉 Diane : pousse ce fichier (ou ajuste le nom)
-      eric:  ''  // 👉 pousse ce fichier (ou ajuste le nom)
+      eric:  '/Bienvenue_Eric_CashFlow.mp3'  // 👉 pousse ce fichier (ou ajuste le nom)
     }
 
     // Vidéos d'accueil (Alexya.ia) — jouées UNE fois à la première visite de chaque
@@ -1294,26 +1212,6 @@
         .trim()
     }
     function escHtml(str) { var d = document.createElement('div'); d.textContent = str; return d.innerHTML }
-  
-    function openPromoPage(url) {
-      document.querySelectorAll('.nav-item').forEach(function(n){ n.classList.remove('active'); });
-      document.querySelectorAll('.panel').forEach(function(p){ p.classList.remove('active'); });
-      var host = document.getElementById('panel-promo');
-      if (!host) {
-        host = document.createElement('div');
-        host.id = 'panel-promo';
-        host.className = 'panel';
-        host.style.cssText = 'flex-direction:column';
-        host.innerHTML = '<iframe id="promo-frame" style="width:100%;height:100%;border:none;display:block"></iframe>';
-        var main = document.querySelector('.main-content');
-        if (main) main.appendChild(host);
-      }
-      host.classList.add('active');
-      var f = document.getElementById('promo-frame');
-      if (f) f.src = url + (url.indexOf('?')>=0?'&':'?') + '_=' + Date.now();
-      if (typeof closeMobileMenu === 'function') closeMobileMenu();
-    }
-
-</script>
+  </script>
 </body>
 </html>
