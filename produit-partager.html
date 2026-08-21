@@ -30,6 +30,24 @@ th{text-align:left;color:var(--t3);font-size:11px;text-transform:uppercase;paddi
 td{padding:10px 6px;border-top:1px solid rgba(123,92,255,.1);color:var(--t2)}
 td strong{color:#fff}
 </style>
+
+<script>
+var TOKEN = sessionStorage.getItem('nyxia_token') || '';
+async function api(path, method, body) {
+  var opts = { method: method || 'GET', headers: { 'Content-Type': 'application/json', 'X-Cercle-Token': TOKEN } };
+  if (body) opts.body = JSON.stringify(body);
+  var r = await fetch(path, opts);
+  var data = await r.json().catch(function(){ return {}; });
+  if (!r.ok) throw new Error(data.error || ('Erreur ' + r.status));
+  return data;
+}
+function showMsg(id, text, ok) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+</script>
 </head>
 <body>
 
@@ -60,22 +78,5 @@ td strong{color:#fff}
 })();
 </script>
 
-<script>
-var TOKEN = sessionStorage.getItem('nyxia_token') || '';
-async function api(path, method, body) {
-  var opts = { method: method || 'GET', headers: { 'Content-Type': 'application/json', 'X-Cercle-Token': TOKEN } };
-  if (body) opts.body = JSON.stringify(body);
-  var r = await fetch(path, opts);
-  var data = await r.json().catch(function(){ return {}; });
-  if (!r.ok) throw new Error(data.error || ('Erreur ' + r.status));
-  return data;
-}
-function showMsg(id, text, ok) {
-  var el = document.getElementById(id);
-  if (!el) return;
-  el.textContent = text;
-  el.className = 'msg ' + (ok ? 'ok' : 'err');
-}
-</script>
 </body>
 </html>
