@@ -62,6 +62,91 @@ function getTokenFromRequest(request) {
     || c.match(/(?:^|;\s*)nyxia_token=([^;]+)/);
   return m ? m[1] : null;
 }
+
+async function ensureSchema(env) {
+  if (!env.DB) return;
+  // Crée les tables si elles n'existent pas (base neuve isolée)
+  await env.DB.batch([
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      full_name TEXT,
+      role TEXT NOT NULL DEFAULT 'affiliate',
+      affiliate_code TEXT UNIQUE,
+      parent_id TEXT,
+      paypal_email TEXT,
+      webhook_secret TEXT,
+      created_at TEXT,
+      updated_at TEXT
+    )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS programs (
+      id TEXT PRIMARY KEY,
+      name TEXT,
+      description TEXT,
+      commission_l1 REAL DEFAULT 25,
+      commission_l2 REAL DEFAULT 10,
+      commission_l3 REAL DEFAULT 5,
+      owner_id TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT
+    )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS marketplace_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT,
+      slug TEXT,
+      icon TEXT,
+      sort_order INTEGER DEFAULT 0,
+      active INTEGER DEFAULT 1,
+      created_at TEXT
+    )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS marketplace_products (
+      id TEXT PRIMARY KEY,
+      seller_id TEXT,
+      category_id INTEGER,
+      title TEXT NOT NULL,
+      description_short TEXT,
+      description_long TEXT,
+      image_url TEXT,
+      price REAL DEFAULT 0,
+      commission_n1 REAL,
+      commission_n2 REAL,
+      commission_n3 REAL,
+      affiliate_link TEXT,
+      promo_code TEXT,
+      status TEXT DEFAULT 'draft',
+      created_at TEXT,
+      updated_at TEXT
+    )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS affiliates (
+      id TEXT PRIMARY KEY,
+      program_id TEXT,
+      user_id TEXT,
+      affiliate_link TEXT,
+      parent_affiliate_id TEXT,
+      grandparent_affiliate_id TEXT,
+      status TEXT DEFAULT 'active',
+      total_earnings REAL DEFAULT 0,
+      total_referrals INTEGER DEFAULT 0,
+      created_at TEXT
+    )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS portals (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      active INTEGER DEFAULT 1,
+      created_at TEXT
+    )`),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS portal_clients (
+      id TEXT PRIMARY KEY,
+      email TEXT,
+      full_name TEXT,
+      password_hash TEXT,
+      portal_ids TEXT,
+      created_at TEXT
+    )`)
+  ]);
+}
+
 async function verifyPasswordAffil(password, stored) {
   // Format: $sha256$salt$hash
   if (!stored || !stored.startsWith('$sha256$')) return false;
@@ -552,6 +637,8 @@ async function handleDeletePortalClient(request, env) {
 
 export default {
   async fetch(request, env) {
+    try { await ensureSchema(env); } catch (e) { console.error("schema", e); }
+
     const url = new URL(request.url);
     const path = url.pathname;
     try {
