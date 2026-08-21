@@ -215,7 +215,7 @@ async function handleListProducts(request, env) {
   try {
     await ensureSchema(env);
     const { results } = await env.DB.prepare(
-      `SELECT id, title, description_short, price, price_monthly, billing_type, status, image_url, promo_code, commission_n1, commission_n2, commission_n3, created_at
+      `SELECT id, title, description_short, price, price_monthly, billing_type, status, image_url, promo_code, commission_n1, commission_n2, commission_n3, seller_id, created_at
        FROM marketplace_products ORDER BY created_at DESC LIMIT 200`
     ).all();
     return json({ products: results || [] });
@@ -226,6 +226,21 @@ async function handleListProducts(request, env) {
 }
 
 
+
+async function sessionFromRequest(request, env, body) {
+  const token = (body && body.token) || request.headers.get('X-Cercle-Token') || request.headers.get('X-Univers-Token') || '';
+  if (!token || !env.CASHFLOW_KV) return null;
+  const raw = await env.CASHFLOW_KV.get('session:' + token);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (_) { return null; }
+}
+
+function isSuperAdminProduct(row) {
+  if (!row) return false;
+  const s = row.seller_id;
+  return s == null || s === '' || s === 'superadmin' || s === 'SUPERADMIN';
+}
+
 async function ensureMarketplaceBillingColumns(env) {
   if (!env.DB) return;
   try { await env.DB.prepare(`ALTER TABLE marketplace_products ADD COLUMN price_monthly REAL DEFAULT 0`).run(); } catch (_) {}
@@ -235,12 +250,17 @@ async function ensureMarketplaceBillingColumns(env) {
 
 async function handleUpdateProduct(request, env) {
   if (!env.DB) return json({ error: 'DB absente' }, 500);
-  await ensureMarketplaceBillingColumns(env);
+  if (typeof ensureMarketplaceBillingColumns === 'function') await ensureMarketplaceBillingColumns(env);
   const body = await request.json().catch(() => ({}));
   const id = (body.id || '').trim();
   if (!id) return json({ error: 'Id requis.' }, 400);
-  const status = body.status != null ? String(body.status) : null;
   try {
+    const row = await env.DB.prepare('SELECT id, seller_id FROM marketplace_products WHERE id = ?').bind(id).first();
+    if (!row) return json({ error: 'Produit introuvable.' }, 404);
+    if (isSuperAdminProduct(row)) {
+      return json({ error: 'Ce produit appartient au Super Admin. Modification réservée au Super Admin Univers.' }, 403);
+    }
+    const status = body.status != null ? String(body.status) : null;
     await env.DB.prepare(
       `UPDATE marketplace_products SET
         title = COALESCE(?, title),
@@ -272,18 +292,25 @@ async function handleUpdateProduct(request, env) {
   }
 }
 
+
 async function handleDeleteProduct(request, env) {
   if (!env.DB) return json({ error: 'DB absente' }, 500);
   const body = await request.json().catch(() => ({}));
   const id = (body.id || '').trim();
   if (!id) return json({ error: 'Id requis.' }, 400);
   try {
-    await env.DB.prepare(`DELETE FROM marketplace_products WHERE id = ?`).bind(id).run();
+    const row = await env.DB.prepare('SELECT id, seller_id FROM marketplace_products WHERE id = ?').bind(id).first();
+    if (!row) return json({ error: 'Produit introuvable.' }, 404);
+    if (isSuperAdminProduct(row)) {
+      return json({ error: 'Ce produit appartient au Super Admin. Suppression réservée au Super Admin Univers.' }, 403);
+    }
+    await env.DB.prepare('DELETE FROM marketplace_products WHERE id = ?').bind(id).run();
     return json({ success: true });
   } catch (e) {
     return json({ error: String(e.message || e) }, 500);
   }
 }
+
 
 async function handleCreateProduct(request, env) {
   if (env.DB) await ensureMarketplaceBillingColumns(env);
