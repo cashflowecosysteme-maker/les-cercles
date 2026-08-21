@@ -224,7 +224,15 @@ async function handleListProducts(request, env) {
   }
 }
 
+
+async function ensureMarketplaceBillingColumns(env) {
+  if (!env.DB) return;
+  try { await env.DB.prepare(`ALTER TABLE marketplace_products ADD COLUMN price_monthly REAL DEFAULT 0`).run(); } catch (_) {}
+  try { await env.DB.prepare(`ALTER TABLE marketplace_products ADD COLUMN billing_type TEXT DEFAULT 'one_time'`).run(); } catch (_) {}
+}
+
 async function handleCreateProduct(request, env) {
+  if (env.DB) await ensureMarketplaceBillingColumns(env);
   if (!env.DB) return json({ error: 'Base non configurée.' }, 500);
   const body = await request.json().catch(() => ({}));
   const token = body.token || request.headers.get('X-Cercle-Token');
