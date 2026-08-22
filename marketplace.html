@@ -207,7 +207,11 @@ function render() {
           ? '<button type="button" class="btn btn-ghost" style="padding:6px 10px;font-size:12px" onclick="setStatus(\''+id+'\',\'draft\')">Brouillon</button>'
           : '<button type="button" class="btn btn-ghost" style="padding:6px 10px;font-size:12px" onclick="setStatus(\''+id+'\',\'active\')">Publier</button>';
         var btnDel = '<button type="button" class="btn btn-ghost" style="padding:6px 10px;font-size:12px;color:#ff8fab;border-color:rgba(255,75,110,.3)" onclick="deleteProduct(\''+id+'\')">Supprimer</button>';
-        actions = btnDraft + ' ' + btnDel;
+        var jt = (p.join_type === 'paid') ? 'paid' : 'free';
+        var btnJoin = (jt === 'paid')
+          ? '<button type="button" class="btn btn-ghost" style="padding:6px 10px;font-size:12px;color:#6ee7b7;border-color:rgba(52,211,153,.3)" onclick="setJoinType(\''+id+'\',\'free\')">Passer en Gratuit</button>'
+          : '<button type="button" class="btn btn-ghost" style="padding:6px 10px;font-size:12px;color:#F4C842;border-color:rgba(244,200,66,.3)" onclick="setJoinType(\''+id+'\',\'paid\')">Passer en Payant</button>';
+        actions = btnJoin + ' ' + btnDraft + ' ' + btnDel;
       }
       return '<tr><td><strong>'+(p.title||'')+'</strong></td><td>'+formatTarif(p)+'</td><td>'+st+'</td><td>'+(p.promo_code||'—')+'</td><td style="white-space:nowrap">'+actions+'</td></tr>';
     }).join('') + '</table>';
@@ -215,6 +219,12 @@ function render() {
 async function setStatus(id, status) {
   try {
     await api('/api/products/update', 'POST', { id: id, status: status });
+    await load();
+  } catch (e) { alert(e.message || e); }
+}
+async function setJoinType(id, type) {
+  try {
+    await api('/api/products/update', 'POST', { id: id, join_type: type });
     await load();
   } catch (e) { alert(e.message || e); }
 }
