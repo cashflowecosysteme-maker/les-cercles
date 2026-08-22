@@ -1,5 +1,15 @@
 <!DOCTYPE html>
 <html lang="fr"><head>
+<script>
+(function(){
+  try {
+    var q = new URLSearchParams(location.search);
+    var t = q.get('t');
+    if (t) sessionStorage.setItem('nyxia_token', t);
+  } catch (e) {}
+})();
+</script>
+
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dashboard Admin — Cercle NyXia</title>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
@@ -41,10 +51,12 @@ function money(n){return Number(n||0).toLocaleString('fr-CA',{minimumFractionDig
 <div style="max-width:1100px;margin:0 auto">
   <h1 id="hello">Bienvenue</h1>
   <p class="sub">Vue Admin commerçant — produits, cercle et revenus</p>
+  <p class="sub" style="margin-top:-8px;font-size:12px">Ton code parrain est <strong style="color:#fff">unique</strong> : les ventes avec ce <code style="color:#a78bfa">ref</code> te sont attribuées (pas à un autre compte).</p>
 
   <div class="lien-box">
     <div class="meta">
-      <div class="lbl">Ton lien de création d’équipe</div>
+      <div class="lbl">Ton code unique (empreinte)</div>
+      <div id="codeShow" style="font-size:18px;font-weight:700;color:#c4b5fd;letter-spacing:.06em;margin:4px 0 8px">—</div>
       <code id="lien">—</code>
     </div>
     <button type="button" class="btn btn-ghost" id="copy">Copier</button>
@@ -80,6 +92,7 @@ function money(n){return Number(n||0).toLocaleString('fr-CA',{minimumFractionDig
 
   var lien = code ? ('https://nyxia.top/r/' + code) : '—';
   document.getElementById('lien').textContent = lien;
+  if(document.getElementById('codeShow')) document.getElementById('codeShow').textContent = code || '—';
   document.getElementById('copy').onclick = function(){
     if(code) navigator.clipboard.writeText(lien);
   };
