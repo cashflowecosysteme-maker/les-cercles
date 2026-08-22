@@ -71,11 +71,16 @@ function money(n){return Number(n||0).toLocaleString('fr-CA',{minimumFractionDig
   </div>
 
   <div class="stats" style="grid-template-columns:repeat(3,1fr)">
-    <div class="stat money"><div class="ico">$</div><b id="s-revenus">0,00 $</b><span>Revenus (payés)</span></div>
-    <div class="stat pending"><div class="ico">⏱</div><b id="s-apayer">0,00 $</b><span>À payer / en attente</span></div>
+    <div class="stat money"><div class="ico">$</div><b id="s-revenus">0,00 $</b><span>Commissions reçues (payées)</span></div>
+    <div class="stat pending"><div class="ico">⏱</div><b id="s-apayer">0,00 $</b><span>À payer à mes promoteurs</span></div>
     <div class="stat paid"><div class="ico">💳</div><b id="s-payes">0,00 $</b><span>Payés</span></div>
   </div>
 
+  <div class="card">
+    <div style="font-weight:600;color:#fff;margin-bottom:8px">Webhook ventes</div>
+    <p class="sub">Pour enregistrer les commissions dues à tes promoteurs (Systeme.io ou autre).</p>
+    <a class="btn" href="/webhook.html" style="text-decoration:none;display:inline-block">Ouvrir ma page webhook</a>
+  </div>
   <div class="card">
     <div style="font-weight:600;color:#fff;margin-bottom:8px">Aperçu</div>
     <p class="sub" style="margin:0" id="apercu">Chargement des stats…</p>
@@ -105,7 +110,7 @@ function money(n){return Number(n||0).toLocaleString('fr-CA',{minimumFractionDig
     document.getElementById('s-cercle').textContent = String(st.team_total||st.team_n1||0);
     document.getElementById('s-clics').textContent = String(st.clicks||0);
     document.getElementById('s-revenus').textContent = money(st.gains||0);
-    document.getElementById('s-apayer').textContent = money(st.pending||0);
+    document.getElementById('s-apayer').textContent = money(st.to_pay!=null?st.to_pay:st.pending||0);
     document.getElementById('s-payes').textContent = money(st.gains||0);
     document.getElementById('apercu').textContent =
       (st.products_draft > 0)
