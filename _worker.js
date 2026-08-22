@@ -357,6 +357,397 @@ async function handleDeleteProduct(request, env) {
 }
 
 
+
+
+async function ensureCommissionsTable(env) {
+  if (!env.DB) return;
+  try {
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS commissions (
+      id TEXT PRIMARY KEY,
+      sale_id TEXT,
+      product_id TEXT,
+      seller_id TEXT,
+      beneficiary_id TEXT,
+      beneficiary_code TEXT,
+      level INTEGER DEFAULT 1,
+      amount REAL DEFAULT 0,
+      currency TEXT DEFAULT 'CAD',
+      status TEXT DEFAULT 'pending',
+      buyer_email TEXT,
+      ref_code TEXT,
+      source TEXT,
+      created_at TEXT,
+      paid_at TEXT
+    )`).run();
+  } catch (e) { console.error('commissions table', e); }
+  try { await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_comm_seller ON commissions(seller_id)`).run(); } catch (_) {}
+  try { await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_comm_benef ON commissions(beneficiary_id)`).run(); } catch (_) {}
+}
+
+async function getProgramPercents(env, sellerId) {
+  // % cercle 1/2/3 — programme global ou défaut
+  let n1 = 25, n2 = 10, n3 = 5;
+  try {
+    const prog = await env.DB.prepare(`SELECT commission_l1, commission_l2, commission_l3 FROM programs LIMIT 1`).first();
+    if (prog) {
+      if (prog.commission_l1 != null) n1 = Number(prog.commission_l1);
+      if (prog.commission_l2 != null) n2 = Number(prog.commission_l2);
+      if (prog.commission_l3 != null) n3 = Number(prog.commission_l3);
+    }
+  } catch (_) {}
+  return { n1, n2, n3 };
+}
+
+async function resolveChainByRef(env, refCode) {
+  // Retourne [beneficiaire n1, n2, n3] users
+  if (!refCode || !env.DB) return [];
+  const u1 = await env.DB.prepare(
+    `SELECT id, email, full_name, role, affiliate_code, parent_id FROM users WHERE affiliate_code = ? LIMIT 1`
+  ).bind(String(refCode).toUpperCase()).first();
+  if (!u1) return [];
+  const chain = [u1];
+  let parentId = u1.parent_id;
+  for (let i = 0; i < 2 && parentId; i++) {
+    const p = await env.DB.prepare(
+      `SELECT id, email, full_name, role, affiliate_code, parent_id FROM users WHERE id = ?`
+    ).bind(parentId).first();
+    if (!p) break;
+    chain.push(p);
+    parentId = p.parent_id;
+  }
+  return chain;
+}
+
+/**
+ * Écrit les commissions d'une vente.
+ * seller_id = qui DOIT payer (Admin propriétaire du produit, ou superadmin)
+ * ref = code du promoteur qui a amené la vente
+ */
+async function writeSaleCommissions(env, {
+  sellerId,
+  productId,
+  amount,
+  buyerEmail,
+  refCode,
+  source
+}) {
+  await ensureCommissionsTable(env);
+  const saleId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const total = Number(amount) || 0;
+  const { n1, n2, n3 } = await getProgramPercents(env, sellerId);
+  const percents = [n1, n2, n3];
+  const chain = await resolveChainByRef(env, refCode);
+
+  const created = [];
+  for (let i = 0; i < chain.length && i < 3; i++) {
+    const benef = chain[i];
+    const pct = percents[i] || 0;
+    const commissionAmount = Math.round((total * pct / 100) * 100) / 100;
+    if (commissionAmount <= 0) continue;
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO commissions
+       (id, sale_id, product_id, seller_id, beneficiary_id, beneficiary_code, level, amount, currency, status, buyer_email, ref_code, source, created_at, paid_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'CAD', 'pending', ?, ?, ?, ?, NULL)`
+    ).bind(
+      id,
+      saleId,
+      productId || null,
+      sellerId || null,
+      benef.id,
+      benef.affiliate_code || null,
+      i + 1,
+      commissionAmount,
+      (buyerEmail || '').toLowerCase() || null,
+      (refCode || '').toString().toUpperCase() || null,
+      source || 'webhook',
+      now
+    ).run();
+    created.push({ id, level: i + 1, beneficiary_id: benef.id, code: benef.affiliate_code, amount: commissionAmount });
+  }
+
+  // Vente sans ref : aucune commission promoteur (normal)
+  return { saleId, commissions: created, chain_length: chain.length };
+}
+
+async function handleSaleWebhook(request, env) {
+  // Webhook générique vente — Systeme.io OU tout autre outil
+  // Auth : header X-Webhook-Secret OU ?secret= OU body.secret
+  // Doit correspondre au webhook_secret de l'Admin (seller) OU SYSTEME_WEBHOOK_SECRET
+  if (!env.DB) return json({ error: 'DB absente' }, 500);
+  await ensureSchema(env);
+  await ensureCommissionsTable(env);
+
+  const url = new URL(request.url);
+  const body = await request.json().catch(() => ({}));
+  const data = body.data || body;
+
+  const secret = (
+    request.headers.get('X-Webhook-Secret') ||
+    url.searchParams.get('secret') ||
+    body.secret ||
+    ''
+  ).toString().trim();
+
+  // Email acheteur (Systeme.io + générique)
+  const customer = data.customer || body.customer || {};
+  const email = (
+    body.email || data.email ||
+    customer.email ||
+    (data.customer && data.customer.email) ||
+    ''
+  ).toString().trim().toLowerCase();
+
+  // Montant
+  let amount = body.amount || body.price || data.amount || data.price ||
+    (data.purchase && (data.purchase.amount || data.purchase.price)) ||
+    (body.items && body.items[0] && body.items[0].amount) || 0;
+  amount = Number(amount) || 0;
+
+  // ref promoteur
+  const refCode = (
+    body.ref || body.affiliate_code || body.parrain || body.code ||
+    data.ref || data.affiliate_code ||
+    url.searchParams.get('ref') ||
+    (customer && (customer.ref || customer.affiliate_code)) ||
+    ''
+  ).toString().trim().toUpperCase();
+
+  // produit
+  const productId = (
+    body.product_id || body.productId || data.product_id ||
+    (data.product && (data.product.id || data.product.slug)) ||
+    url.searchParams.get('product') ||
+    ''
+  ).toString().trim() || null;
+
+  // seller : query seller= ID ou email, ou body.seller_id, ou produit.seller_id
+  let sellerId = (
+    body.seller_id || body.sellerId ||
+    url.searchParams.get('seller') ||
+    ''
+  ).toString().trim() || null;
+
+  if (!sellerId && productId) {
+    try {
+      const prod = await env.DB.prepare(`SELECT seller_id FROM marketplace_products WHERE id = ?`).bind(productId).first();
+      if (prod && prod.seller_id) sellerId = prod.seller_id;
+    } catch (_) {}
+  }
+
+  // Auth secret
+  let sellerRow = null;
+  if (sellerId) {
+    sellerRow = await env.DB.prepare(
+      `SELECT id, email, role, webhook_secret, affiliate_code FROM users WHERE id = ?`
+    ).bind(sellerId).first();
+  }
+  // Si seller passé en email
+  if (!sellerRow && sellerId && sellerId.includes('@')) {
+    sellerRow = await env.DB.prepare(
+      `SELECT id, email, role, webhook_secret, affiliate_code FROM users WHERE lower(email) = ? AND role = 'admin' LIMIT 1`
+    ).bind(sellerId.toLowerCase()).first();
+    if (sellerRow) sellerId = sellerRow.id;
+  }
+
+  const globalSecret = (env.SYSTEME_WEBHOOK_SECRET || env.WEBHOOK_SECRET || '').toString();
+  const sellerSecret = (sellerRow && sellerRow.webhook_secret) || '';
+  const okSecret = !secret ? false :
+    (globalSecret && secret === globalSecret) ||
+    (sellerSecret && secret === sellerSecret);
+
+  // Super admin / produit maison : seller_id superadmin autorisé avec secret global
+  if (sellerId === 'superadmin' || sellerId === 'SUPERADMIN') {
+    if (globalSecret && secret !== globalSecret) {
+      return json({ error: 'Secret webhook invalide.' }, 401);
+    }
+  } else if (sellerRow) {
+    if (!okSecret && globalSecret && secret === globalSecret) {
+      // secret global accepté aussi pour ops
+    } else if (!okSecret) {
+      return json({ error: 'Secret webhook invalide pour cet Admin.' }, 401);
+    }
+  } else if (globalSecret) {
+    if (secret !== globalSecret) return json({ error: 'Secret webhook invalide.' }, 401);
+    // seller inconnu mais secret global : on enregistre quand même si sellerId fourni
+  } else {
+    // pas de secret configuré → refuser en prod
+    return json({ error: 'Configure SYSTEME_WEBHOOK_SECRET ou webhook_secret Admin.' }, 401);
+  }
+
+  if (!sellerId) {
+    return json({ error: 'seller_id requis (propriétaire du produit qui doit les commissions).' }, 400);
+  }
+
+  const result = await writeSaleCommissions(env, {
+    sellerId,
+    productId,
+    amount,
+    buyerEmail: email,
+    refCode,
+    source: body.source || 'webhook_vente'
+  });
+
+  return json({
+    success: true,
+    seller_id: sellerId,
+    buyer_email: email || null,
+    ref: refCode || null,
+    amount,
+    ...result
+  });
+}
+
+async function handleMyWebhookInfo(request, env) {
+  // Admin connecté : son URL webhook + secret
+  const body = await request.json().catch(() => ({}));
+  const token = body.token || request.headers.get('X-Cercle-Token');
+  if (!token || !env.CASHFLOW_KV) return json({ error: 'Session requise' }, 401);
+  const raw = await env.CASHFLOW_KV.get('session:' + token);
+  if (!raw) return json({ error: 'Session expirée' }, 401);
+  const session = JSON.parse(raw);
+  if (session.role !== 'admin' && session.role !== 'superadmin') {
+    return json({ error: 'Réservé aux Admins.' }, 403);
+  }
+  if (!env.DB || !session.userId) return json({ error: 'Compte invalide' }, 400);
+
+  let user = await env.DB.prepare(
+    `SELECT id, email, webhook_secret, affiliate_code FROM users WHERE id = ?`
+  ).bind(session.userId).first();
+  if (!user) return json({ error: 'Utilisateur introuvable' }, 404);
+
+  let secret = user.webhook_secret || '';
+  if (!secret) {
+    secret = crypto.randomUUID().replace(/-/g, '');
+    await env.DB.prepare(
+      `UPDATE users SET webhook_secret = ?, updated_at = ? WHERE id = ?`
+    ).bind(secret, new Date().toISOString(), user.id).run();
+  }
+
+  const origin = new URL(request.url).origin;
+  const url = origin + '/api/webhooks/vente?seller=' + encodeURIComponent(user.id) + '&secret=' + encodeURIComponent(secret);
+
+  return json({
+    success: true,
+    seller_id: user.id,
+    code: user.affiliate_code || '',
+    webhook_url: url,
+    secret,
+    example_body: {
+      email: 'acheteur@email.com',
+      amount: 97,
+      ref: 'CODE_PROMOTEUR',
+      product_id: 'UUID_PRODUIT',
+      source: 'systeme.io'
+    }
+  });
+}
+
+async function handleStats(request, env) {
+  if (!env.DB) return json({ error: 'DB absente' }, 500);
+  await ensureSchema(env);
+  const body = request.method === 'POST' ? await request.json().catch(() => ({})) : {};
+  const url = new URL(request.url);
+  const token = body.token || url.searchParams.get('token') || request.headers.get('X-Cercle-Token') || request.headers.get('X-Univers-Token') || '';
+  let session = null;
+  if (token && env.CASHFLOW_KV) {
+    const raw = await env.CASHFLOW_KV.get('session:' + token);
+    if (raw) try { session = JSON.parse(raw); } catch (_) {}
+  }
+  const userId = session && (session.userId || session.id);
+  const code = (session && (session.code || session.affiliate_code || session.affiliateCode)) || '';
+
+  // Produits (scope vendeur si userId)
+  let products_total = 0, products_active = 0, products_draft = 0;
+  try {
+    if (userId) {
+      const t = await env.DB.prepare(`SELECT COUNT(*) as c FROM marketplace_products WHERE seller_id = ?`).bind(userId).first();
+      const a = await env.DB.prepare(`SELECT COUNT(*) as c FROM marketplace_products WHERE seller_id = ? AND (status = 'active' OR status = 'published')`).bind(userId).first();
+      const d = await env.DB.prepare(`SELECT COUNT(*) as c FROM marketplace_products WHERE seller_id = ? AND status = 'draft'`).bind(userId).first();
+      products_total = Number(t && t.c || 0);
+      products_active = Number(a && a.c || 0);
+      products_draft = Number(d && d.c || 0);
+    } else {
+      const t = await env.DB.prepare(`SELECT COUNT(*) as c FROM marketplace_products`).first();
+      const a = await env.DB.prepare(`SELECT COUNT(*) as c FROM marketplace_products WHERE status = 'active' OR status = 'published'`).first();
+      const d = await env.DB.prepare(`SELECT COUNT(*) as c FROM marketplace_products WHERE status = 'draft'`).first();
+      products_total = Number(t && t.c || 0);
+      products_active = Number(a && a.c || 0);
+      products_draft = Number(d && d.c || 0);
+    }
+  } catch (e) { console.error('stats products', e); }
+
+  // Cercle : downline directe (parent_id = user)
+  let team_n1 = 0, team_total = 0;
+  try {
+    if (userId) {
+      const n1 = await env.DB.prepare(`SELECT COUNT(*) as c FROM users WHERE parent_id = ?`).bind(userId).first();
+      team_n1 = Number(n1 && n1.c || 0);
+      // approx total via affiliates table if present
+      try {
+        const aff = await env.DB.prepare(`SELECT id FROM affiliates WHERE user_id = ?`).bind(userId).first();
+        if (aff) {
+          const down = await env.DB.prepare(
+            `SELECT COUNT(*) as c FROM affiliates WHERE parent_affiliate_id = ? OR grandparent_affiliate_id = ?`
+          ).bind(aff.id, aff.id).first();
+          team_total = Number(down && down.c || 0) + team_n1;
+        } else team_total = team_n1;
+      } catch (_) { team_total = team_n1; }
+    }
+  } catch (e) { console.error('stats team', e); }
+
+  // Clics ref (KV)
+  let clicks = 0;
+  try {
+    if (env.CASHFLOW_KV && code) {
+      const list = await env.CASHFLOW_KV.list({ prefix: 'ref_click:' + String(code).toUpperCase() + ':' });
+      for (const k of (list.keys || [])) {
+        const v = await env.CASHFLOW_KV.get(k.name);
+        clicks += parseInt(v || '0', 10) || 0;
+      }
+    }
+  } catch (e) { console.error('stats clicks', e); }
+
+  // Gains / à payer selon rôle
+  let gains = 0, pending = 0, to_pay = 0;
+  try {
+    await ensureCommissionsTable(env);
+    if (userId) {
+      // Ce que JE reçois (beneficiary)
+      const g = await env.DB.prepare(`SELECT COALESCE(SUM(amount),0) as s FROM commissions WHERE beneficiary_id = ? AND status = 'paid'`).bind(userId).first();
+      const pe = await env.DB.prepare(`SELECT COALESCE(SUM(amount),0) as s FROM commissions WHERE beneficiary_id = ? AND status = 'pending'`).bind(userId).first();
+      gains = Number(g && g.s || 0);
+      pending = Number(pe && pe.s || 0);
+      // Ce que JE dois (seller = Admin propriétaire)
+      const tp = await env.DB.prepare(`SELECT COALESCE(SUM(amount),0) as s FROM commissions WHERE seller_id = ? AND status = 'pending'`).bind(userId).first();
+      to_pay = Number(tp && tp.s || 0);
+    }
+  } catch (e) { console.error('stats gains', e); }
+
+  // Global (super / admin vue large)
+  let users_total = 0, affiliates_total = 0, admins_total = 0;
+  try {
+    const u = await env.DB.prepare(`SELECT COUNT(*) as c FROM users`).first();
+    users_total = Number(u && u.c || 0);
+    const af = await env.DB.prepare(`SELECT COUNT(*) as c FROM users WHERE role = 'affiliate'`).first();
+    affiliates_total = Number(af && af.c || 0);
+    const ad = await env.DB.prepare(`SELECT COUNT(*) as c FROM users WHERE role = 'admin'`).first();
+    admins_total = Number(ad && ad.c || 0);
+  } catch (_) {}
+
+  return json({
+    success: true,
+    products_total, products_active, products_draft,
+    team_n1, team_total,
+    clicks,
+    gains, pending, to_pay,
+    users_total, affiliates_total, admins_total,
+    code: code || null,
+    userId: userId || null
+  });
+}
+
 async function handleCreateProduct(request, env) {
   if (env.DB) await ensureMarketplaceBillingColumns(env);
   await ensureMarketplacePromoColumns(env);
@@ -596,15 +987,38 @@ async function handleHelpdesk(request, env) {
 
 async function generateAffiliateCode(env) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  for (let attempt = 0; attempt < 12; attempt++) {
+  for (let attempt = 0; attempt < 40; attempt++) {
     let code = '';
     const buf = crypto.getRandomValues(new Uint8Array(8));
     for (let i = 0; i < 8; i++) code += chars[buf[i] % chars.length];
+    if (!env.DB) return code;
     const exists = await env.DB.prepare('SELECT id FROM users WHERE affiliate_code = ?').bind(code).first();
     if (!exists) return code;
   }
-  return crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase();
+  return ('N' + crypto.randomUUID().replace(/-/g, '')).slice(0, 10).toUpperCase();
 }
+
+/** Résout un code parrain → propriétaire (qui est payé) */
+async function handleResolveRef(request, env) {
+  const url = new URL(request.url);
+  const code = (url.searchParams.get('code') || url.searchParams.get('ref') || '').trim().toUpperCase();
+  if (!code) return json({ error: 'code requis' }, 400);
+  if (!env.DB) return json({ error: 'DB absente' }, 500);
+  const user = await env.DB.prepare(
+    `SELECT id, email, full_name, role, affiliate_code FROM users WHERE affiliate_code = ? LIMIT 1`
+  ).bind(code).first();
+  if (!user) return json({ found: false, code });
+  return json({
+    found: true,
+    code: user.affiliate_code,
+    role: user.role,
+    name: user.full_name || '',
+    email: user.email,
+    userId: user.id,
+    who_gets_paid: user.role === 'admin' ? 'Admin commerçant' : (user.role === 'affiliate' ? 'Promoteur' : user.role)
+  });
+}
+
 
 // Inscription public — promo / cercle (lien de parrainage)
 async function handleSignup(request, env) {
@@ -750,8 +1164,10 @@ async function handleSystemeWebhook(request, env) {
     return json({ success: true, granted: 'eric_30', email, userId: uid });
   }
 
-  // Achat / abo promoteur principal → compte affiliate
-  let user = await env.DB.prepare('SELECT id, affiliate_code, role FROM users WHERE email = ?').bind(email).first();
+  // Achat / abo promoteur → compte AFFILIATE seulement (ne JAMAIS réutiliser un Admin)
+  let user = await env.DB.prepare(
+    `SELECT id, affiliate_code, role FROM users WHERE email = ? AND role = 'affiliate' LIMIT 1`
+  ).bind(email).first();
   let userId;
   let affiliateCode;
 
@@ -767,7 +1183,7 @@ async function handleSystemeWebhook(request, env) {
     userId = crypto.randomUUID();
     affiliateCode = await generateAffiliateCode(env);
     const now = new Date().toISOString();
-    // Mot de passe temporaire : la personne se connectera via magic link / reset plus tard, ou Systeme envoie accès
+    // Mot de passe temporaire
     const tempPass = await hashPasswordAffil(crypto.randomUUID().slice(0, 12));
     await env.DB.prepare(
       `INSERT INTO users (id, email, password_hash, full_name, role, affiliate_code, parent_id, created_at, updated_at)
@@ -816,11 +1232,23 @@ const url = new URL(request.url);
     try {
       if (path === '/api/signup' && request.method === 'POST') return await handleSignup(request, env);
       if (path === '/api/login' && request.method === 'POST') return await handleLogin(request, env);
+      if (path === '/api/ref-resolve' && request.method === 'GET') return await handleResolveRef(request, env);
       if (path === '/api/check-auth' && request.method === 'POST') return await handleCheckAuth(request, env);
+      if (path === '/api/ensure-code' && request.method === 'POST') return await handleEnsureCode(request, env);
       if (path === '/api/logout' && request.method === 'POST') return await handleLogout(request, env);
       if ((path === '/api/repertoire' || path === '/api/marketplace/public') && request.method === 'GET') return await handlePublicRepertoire(request, env);
       if (path === '/api/product' && request.method === 'GET') return await handleGetProduct(request, env, url);
       if (path === '/api/helpdesk' && request.method === 'POST') return await handleHelpdesk(request, env);
+      if (path === '/api/stats' && (request.method === 'GET' || request.method === 'POST')) return await handleStats(request, env);
+      if (path === '/api/webhooks/vente' && request.method === 'POST') return await handleSaleWebhook(request, env);
+      if (path === '/api/my-webhook' && request.method === 'POST') return await handleMyWebhookInfo(request, env);
+      if (path === '/api/webhooks/systeme' && request.method === 'POST') {
+        // Adhésion promoteur (compte) OU vente commission selon payload
+        const body = await request.clone().json().catch(() => ({}));
+        const isSale = !!(body.amount || body.price || (body.data && (body.data.amount || body.data.price)) || body.seller_id || body.product_id);
+        if (isSale) return await handleSaleWebhook(request, env);
+        return await handleSystemeWebhook(request, env);
+      }
       if (path === '/api/products' && request.method === 'GET') return await handleListProducts(request, env);
       if (path === '/api/products' && request.method === 'POST') return await handleCreateProduct(request, env);
       if (path === '/api/products/update' && request.method === 'POST') return await handleUpdateProduct(request, env);
@@ -984,41 +1412,58 @@ async function ensureSchema(env) {
 }
 
 async function handleLogin(request, env) {
-  const body = await request.json();
+  const body = await request.json().catch(() => ({}));
   const email = (body.email || '').toLowerCase().trim();
   const password = body.password || '';
   const firstname = (body.firstname || body.firstName || '').trim();
   if (!email || !password) return json({ error: 'Email et mot de passe requis.' }, 400);
+  if (!env.CASHFLOW_KV) return json({ error: 'Session KV absente sur ce Worker (binding CASHFLOW_KV).' }, 500);
 
   // 1) Compte Cercles (D1) — Admin / Promoteur
   if (env.DB) {
     try {
       await ensureSchema(env);
+      const host = (request.headers.get('Host') || '').toLowerCase();
+      // promoteurs.* → privilégier compte affiliate ; sinon privilégier admin
+      const preferPromo = host.includes('promoteurs');
       const candidates = await env.DB.prepare(
         `SELECT id, email, password_hash, full_name, role, affiliate_code, paypal_email
          FROM users WHERE email = ? AND role IN ('admin', 'affiliate')
-         ORDER BY CASE role WHEN 'admin' THEN 0 ELSE 1 END, created_at ASC`
-      ).bind(email).all();
+         ORDER BY CASE role
+           WHEN 'affiliate' THEN ?
+           WHEN 'admin' THEN ?
+           ELSE 2 END, created_at ASC`
+      ).bind(email, preferPromo ? 0 : 1, preferPromo ? 1 : 0).all();
       const list = candidates.results || [];
       for (const user of list) {
         if (await verifyPasswordAffil(password, user.password_hash)) {
           const token = randomToken();
+          let affCode = (user.affiliate_code || '').toString().trim().toUpperCase();
+          if (!affCode) {
+            affCode = await generateAffiliateCode(env);
+            try {
+              await env.DB.prepare(`UPDATE users SET affiliate_code = ?, updated_at = datetime('now') WHERE id = ?`).bind(affCode, user.id).run();
+            } catch (e) { console.error('backfill code', e); }
+          }
           const session = {
             email: user.email,
-            firstname: user.full_name || firstname || '',
+            firstname: (user.full_name || firstname || '').split(' ')[0] || user.full_name || '',
             role: user.role,
-            code: user.affiliate_code || '',
+            code: affCode,
+            affiliate_code: affCode,
             paypal: user.paypal_email || '',
             userId: user.id
           };
-          // session: → compatible chats Studio (voix, images, PDF, copier)
-          await env.CASHFLOW_KV.put(`session:${token}`, JSON.stringify(session), { expirationTtl: SESSION_TTL });
+          await env.CASHFLOW_KV.put('session:' + token, JSON.stringify(session), { expirationTtl: SESSION_TTL });
           return json({ success: true, token, firstname: session.firstname, role: session.role, code: session.code });
         }
       }
     } catch (e) {
       console.error('login D1', e);
+      return json({ error: 'Erreur serveur login: ' + String(e.message || e) }, 500);
     }
+  } else {
+    return json({ error: 'Base D1 absente sur ce Worker (binding DB).' }, 500);
   }
 
   // 2) Fallback clients KV Studio (si existants)
@@ -1042,20 +1487,104 @@ async function handleLogin(request, env) {
 
 async function handleCheckAuth(request, env) {
   const body = await request.json().catch(() => ({}));
-  const token = body.token || null;
-  if (!token) return json({ valid: false });
-  const raw = await env.CASHFLOW_KV.get(`session:${token}`);
-  if (!raw) return json({ valid: false });
-  const session = JSON.parse(raw);
+  const token = body.token || request.headers.get('X-Cercle-Token') || null;
+  if (!token || !env.CASHFLOW_KV) return json({ valid: false, error: 'no_token' });
+  const raw = await env.CASHFLOW_KV.get('session:' + token);
+  if (!raw) return json({ valid: false, error: 'session_expired' });
+  let session;
+  try { session = JSON.parse(raw); } catch (_) { return json({ valid: false, error: 'bad_session' }); }
+
+  let code = String(session.code || session.affiliate_code || '').trim().toUpperCase();
+  let userId = session.userId || session.id || null;
+  let email = String(session.email || '').trim().toLowerCase();
+  let role = session.role || '';
+  let firstname = session.firstname || '';
+  let paypal = session.paypal || '';
+
+  if (env.DB) {
+    try {
+      await ensureSchema(env);
+      let row = null;
+      if (userId) {
+        row = await env.DB.prepare(
+          `SELECT id, email, full_name, role, affiliate_code, paypal_email FROM users WHERE id = ?`
+        ).bind(userId).first();
+      }
+      if (!row && email) {
+        row = await env.DB.prepare(
+          `SELECT id, email, full_name, role, affiliate_code, paypal_email FROM users WHERE lower(email) = ? ORDER BY CASE role WHEN 'affiliate' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END LIMIT 1`
+        ).bind(email).first();
+      }
+      // Dernier recours : chercher par code déjà en session
+      if (!row && code) {
+        row = await env.DB.prepare(
+          `SELECT id, email, full_name, role, affiliate_code, paypal_email FROM users WHERE affiliate_code = ? LIMIT 1`
+        ).bind(code).first();
+      }
+
+      if (row) {
+        userId = row.id;
+        email = row.email || email;
+        role = row.role || role;
+        firstname = firstname || String(row.full_name || '').split(' ')[0] || '';
+        paypal = row.paypal_email || paypal;
+        code = String(row.affiliate_code || '').trim().toUpperCase();
+
+        if (!code) {
+          code = await generateAffiliateCode(env);
+          await env.DB.prepare(
+            `UPDATE users SET affiliate_code = ?, updated_at = ? WHERE id = ?`
+          ).bind(code, new Date().toISOString(), row.id).run();
+        }
+      } else if (email && !code) {
+        // Session sans ligne D1 : créer le compte affiliate minimal avec code
+        code = await generateAffiliateCode(env);
+        userId = crypto.randomUUID();
+        const now = new Date().toISOString();
+        const tempPass = await hashPasswordAffil(crypto.randomUUID().slice(0, 12));
+        await env.DB.prepare(
+          `INSERT INTO users (id, email, password_hash, full_name, role, affiliate_code, parent_id, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 'affiliate', ?, NULL, ?, ?)`
+        ).bind(userId, email, tempPass, firstname || email.split('@')[0], code, now, now).run();
+        role = 'affiliate';
+      }
+    } catch (e) {
+      console.error('check-auth D1', e);
+    }
+  }
+
+  // Toujours persister le code en session s'il existe
+  if (code) {
+    session.userId = userId;
+    session.email = email;
+    session.role = role;
+    session.code = code;
+    session.affiliate_code = code;
+    session.firstname = firstname;
+    session.paypal = paypal;
+    try {
+      await env.CASHFLOW_KV.put('session:' + token, JSON.stringify(session), { expirationTtl: SESSION_TTL });
+    } catch (_) {}
+  }
+
   return json({
     valid: true,
-    email: session.email,
-    firstname: session.firstname,
-    role: session.role || '',
-    code: session.code || '',
-    paypal: session.paypal || ''
+    email: email || '',
+    firstname: firstname || '',
+    role: role || '',
+    code: code || '',
+    affiliate_code: code || '',
+    paypal: paypal || '',
+    userId: userId || null,
+    has_code: !!code
   });
 }
+
+async function handleEnsureCode(request, env) {
+  // Alias explicite : force l'attribution du code
+  return handleCheckAuth(request, env);
+}
+
 
 async function handleLogout(request, env) {
   const body = await request.json().catch(() => ({}));
