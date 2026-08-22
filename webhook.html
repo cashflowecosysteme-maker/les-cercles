@@ -1,69 +1,85 @@
 <!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" type="image/png" href="/FavIcon.png">
-<title>Webhook Systeme.io — Le Cercle</title>
+<html lang="fr"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Webhook ventes — Admin</title>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg1:#0A1628;--bg2:#0F1C3F;--bg3:#1A2554;--p:#7B5CFF;--p2:#5A6CFF;--p3:#4FA3FF;--t:#fff;--t2:#D6D9F0;--t3:#8891B8;--t4:#4a5278;--green:#00E676;--gold:#F4C842}
+:root{--bg:#0A1628;--card:rgba(123,92,255,.06);--border:rgba(123,92,255,.15);--p:#7B5CFF;--p2:#5A6CFF;--t:#fff;--t2:#D6D9F0;--t3:#8891B8;--green:#00E676}
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%;background:var(--bg1);color:var(--t2);font-family:Outfit,sans-serif}
-body{padding:28px;overflow-y:auto}
-h2{font-family:'Space Grotesk',sans-serif;font-size:22px;color:#fff;margin-bottom:6px}
-.sub{color:var(--t3);font-size:13px;margin-bottom:24px;line-height:1.5}
-.card{background:rgba(123,92,255,0.06);border:1px solid rgba(123,92,255,0.15);border-radius:16px;padding:20px;margin-bottom:16px}
-label{display:block;font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}
-input,select,textarea{width:100%;padding:12px 14px;border-radius:10px;border:1px solid rgba(123,92,255,0.2);background:rgba(15,28,63,0.5);color:#fff;font-family:Outfit,sans-serif;font-size:13px;outline:none}
-input:focus,select:focus,textarea:focus{border-color:var(--p)}
-.btn{padding:12px 20px;border-radius:10px;border:none;background:linear-gradient(135deg,var(--p),var(--p2));color:#fff;font-weight:600;font-size:13px;cursor:pointer;font-family:'Space Grotesk',sans-serif}
-.btn:hover{opacity:.92}
-.btn-ghost{background:rgba(123,92,255,.12);border:1px solid rgba(123,92,255,.3);color:var(--p3)}
-.row{display:flex;gap:10px;align-items:center}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media(max-width:640px){.grid2{grid-template-columns:1fr}}
-.hint{font-size:12px;color:var(--t3);margin-top:8px}
-.msg{margin-top:12px;font-size:13px;display:none}.msg.ok{display:block;color:var(--green)}.msg.err{display:block;color:#ff6b6b}
-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px}
-th{text-align:left;color:var(--t3);font-size:11px;text-transform:uppercase;padding:8px 6px}
-td{padding:10px 6px;border-top:1px solid rgba(123,92,255,.1);color:var(--t2)}
-td strong{color:#fff}
+body{font-family:Outfit,sans-serif;background:var(--bg);color:var(--t2);padding:28px;line-height:1.55}
+h1{font-family:'Space Grotesk',sans-serif;font-size:22px;color:#fff;margin-bottom:6px}
+.sub{color:var(--t3);font-size:13px;margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px;margin-bottom:16px}
+.card h2{font-size:15px;color:#fff;margin-bottom:10px}
+code,pre{display:block;padding:12px;border-radius:12px;background:rgba(6,10,24,.55);border:1px solid var(--border);color:#e9e5ff;font-size:12px;word-break:break-all;white-space:pre-wrap;margin:8px 0}
+.btn{padding:10px 16px;border-radius:12px;border:none;cursor:pointer;font-weight:600;font-size:13px;background:linear-gradient(135deg,var(--p),var(--p2));color:#fff;font-family:Outfit,sans-serif}
+.btn-ghost{background:rgba(123,92,255,.12);border:1px solid rgba(123,92,255,.25);color:#fff;margin-left:8px}
+.ok{color:var(--green);font-size:13px}
+.warn{color:#F4C842;font-size:13px;margin-top:8px}
+ul{margin:8px 0 0 18px;color:var(--t2);font-size:13px}
 </style>
-
 <script>
-var TOKEN = sessionStorage.getItem('nyxia_token') || '';
-async function api(path, method, body) {
-  var opts = { method: method || 'GET', headers: { 'Content-Type': 'application/json', 'X-Cercle-Token': TOKEN } };
-  if (body) opts.body = JSON.stringify(body);
-  var r = await fetch(path, opts);
-  var data = await r.json().catch(function(){ return {}; });
-  if (!r.ok) throw new Error(data.error || ('Erreur ' + r.status));
-  return data;
-}
-function showMsg(id, text, ok) {
-  var el = document.getElementById(id);
-  if (!el) return;
-  el.textContent = text;
-  el.className = 'msg ' + (ok ? 'ok' : 'err');
-}
+var TOKEN=(function(){try{var q=new URLSearchParams(location.search);var t=q.get('t');if(t){sessionStorage.setItem('nyxia_token',t);return t;}}catch(e){}return sessionStorage.getItem('nyxia_token')||'';})();
 </script>
-</head>
-<body>
+</head><body>
+<h1>Webhook ventes</h1>
+<p class="sub">Tu reçois l’argent de <b style="color:#fff">tes</b> produits. Ce webhook enregistre les commissions dues à <b style="color:#fff">tes</b> promoteurs — le Super Admin ne les paie pas à ta place.</p>
 
-<div style="max-width:640px;margin:0 auto">
-  <h2>🔗 Configuration Webhook Systeme.io</h2>
-  <p class="sub">Colle l’URL de ton webhook Systeme.io pour synchroniser les ventes et les inscriptions.</p>
-  <div class="card">
-    <label>URL du webhook</label>
-    <input type="url" id="webhook-url" placeholder="https://..." style="margin-bottom:14px">
-    <button class="btn" onclick="saveWebhook()">Enregistrer</button>
-    <div class="msg" id="wh-msg"></div>
-  </div>
+<div class="card">
+  <h2>Ton URL webhook (à coller dans Systeme.io ou autre)</h2>
+  <pre id="url">Chargement…</pre>
+  <button type="button" class="btn" id="copyUrl">Copier l’URL</button>
+  <button type="button" class="btn btn-ghost" id="copySecret">Copier le secret</button>
+  <p class="ok" id="status"></p>
 </div>
-<script>
-function saveWebhook(){ showMsg('wh-msg', 'Enregistrement à brancher (champ webhook déjà prévu côté users).', false); }
-</script>
 
-</body>
-</html>
+<div class="card">
+  <h2>Format générique (n’importe quel outil de paiement)</h2>
+  <p class="sub">POST JSON vers ton URL. Champs utiles :</p>
+  <pre id="example">{}</pre>
+  <ul>
+    <li><b>email</b> — acheteur</li>
+    <li><b>amount</b> — montant de la vente</li>
+    <li><b>ref</b> — code unique du promoteur (empreinte)</li>
+    <li><b>product_id</b> — id produit Répertoire (optionnel mais recommandé)</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2>Systeme.io</h2>
+  <ul>
+    <li>Automatisation → Nouvelle vente → Webhook</li>
+    <li>Colle <b>ton URL</b> ci-dessus</li>
+    <li>Le champ <code style="display:inline;padding:2px 6px">ref</code> doit voyager avec le lien d’affiliation du promoteur</li>
+  </ul>
+  <p class="warn">Sans signal de vente (webhook), les commissions ne s’écrivent pas — quel que soit l’outil.</p>
+</div>
+
+<script>
+(async function(){
+  var r = await fetch('/api/my-webhook', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Cercle-Token': TOKEN },
+    body: JSON.stringify({ token: TOKEN })
+  });
+  var d = await r.json().catch(function(){ return {}; });
+  if (!r.ok) {
+    document.getElementById('url').textContent = d.error || 'Erreur — reconnecte-toi en Admin.';
+    return;
+  }
+  document.getElementById('url').textContent = d.webhook_url || '—';
+  document.getElementById('example').textContent = JSON.stringify(d.example_body || {}, null, 2);
+  document.getElementById('status').textContent = 'Seller ID : ' + (d.seller_id || '') + ' · Ton code : ' + (d.code || '—');
+  document.getElementById('copyUrl').onclick = function(){
+    navigator.clipboard.writeText(d.webhook_url || '');
+    this.textContent = 'Copié ✓';
+    var b=this; setTimeout(function(){ b.textContent='Copier l’URL'; },1500);
+  };
+  document.getElementById('copySecret').onclick = function(){
+    navigator.clipboard.writeText(d.secret || '');
+    this.textContent = 'Secret copié ✓';
+    var b=this; setTimeout(function(){ b.textContent='Copier le secret'; },1500);
+  };
+})();
+</script>
+</body></html>
