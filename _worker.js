@@ -227,7 +227,7 @@ async function handleListProducts(request, env) {
     let results = [];
     if (isSuper) {
       const r = await env.DB.prepare(
-        `SELECT id, title, description_short, price, price_monthly, billing_type, status, image_url, promo_code, commission_n1, commission_n2, commission_n3, seller_id, created_at
+        `SELECT id, title, description_short, price, price_monthly, billing_type, status, image_url, promo_code, commission_n1, commission_n2, commission_n3, seller_id, join_type, join_url, created_at
          FROM marketplace_products ORDER BY created_at DESC LIMIT 200`
       ).all();
       results = r.results || [];
@@ -236,7 +236,7 @@ async function handleListProducts(request, env) {
       const uid = session && (session.userId || session.id) || null;
       if (uid) {
         const r = await env.DB.prepare(
-          `SELECT id, title, description_short, price, price_monthly, billing_type, status, image_url, promo_code, commission_n1, commission_n2, commission_n3, seller_id, created_at
+          `SELECT id, title, description_short, price, price_monthly, billing_type, status, image_url, promo_code, commission_n1, commission_n2, commission_n3, seller_id, join_type, join_url, created_at
            FROM marketplace_products
            WHERE seller_id = ?
            ORDER BY created_at DESC LIMIT 200`
@@ -245,7 +245,7 @@ async function handleListProducts(request, env) {
       } else {
         // Sans session claire : ne pas exposer les produits Super Admin
         const r = await env.DB.prepare(
-          `SELECT id, title, description_short, price, price_monthly, billing_type, status, image_url, promo_code, commission_n1, commission_n2, commission_n3, seller_id, created_at
+          `SELECT id, title, description_short, price, price_monthly, billing_type, status, image_url, promo_code, commission_n1, commission_n2, commission_n3, seller_id, join_type, join_url, created_at
            FROM marketplace_products
            WHERE seller_id IS NOT NULL AND seller_id != '' AND seller_id != 'superadmin' AND seller_id != 'SUPERADMIN'
            ORDER BY created_at DESC LIMIT 200`
@@ -316,6 +316,9 @@ async function handleUpdateProduct(request, env) {
         affiliate_link = COALESCE(?, affiliate_link),
         image_url = COALESCE(?, image_url),
         promo_code = COALESCE(?, promo_code),
+        promo_guide = COALESCE(?, promo_guide),
+        join_url = COALESCE(?, join_url),
+        join_type = COALESCE(?, join_type),
         status = COALESCE(?, status),
         updated_at = datetime('now')
        WHERE id = ?`
@@ -328,6 +331,9 @@ async function handleUpdateProduct(request, env) {
       body.affiliateLink || body.affiliate_link || null,
       body.imageUrl || body.image_url || null,
       body.promoCode || body.promo_code || null,
+      (body.promo_guide || body.promoGuide || '').trim() || null,
+      (body.join_url || body.joinUrl || '').trim() || null,
+      (body.join_type || body.joinType) || null,
       status,
       id
     ).run();
