@@ -16,6 +16,6 @@
    });box.appendChild(card)
   });
  }
- async function load(){try{var d=await call('GET');var rows=d.commissions||[];render(rows.filter(function(c){return c.status==='pending'}),'pending-payments',false);render(rows.filter(function(c){return c.status==='paid'}),'paid-payments',true)}catch(e){document.getElementById('pending-payments').textContent=e.message}}
+ async function load(){try{var d=await call('GET');var rows=d.commissions||[];render(rows.filter(function(c){return c.status==='pending'}),'pending-payments',false);render(rows.filter(function(c){return c.status==='paid'}),'paid-payments',true);if(d.history_incomplete){var note=document.createElement('p');note.style.cssText='margin-top:16px;color:#F4C842;font-size:13px;line-height:1.6';note.textContent='Certaines anciennes commissions ne peuvent pas encore être rattachées à leur vendeur. L’historique peut être incomplet.';document.getElementById('paid-payments').appendChild(note)}}catch(e){document.getElementById('pending-payments').textContent=e.message;document.getElementById('paid-payments').textContent='Historique indisponible : '+e.message}}
  load();
 })();

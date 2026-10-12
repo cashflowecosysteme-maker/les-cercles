@@ -252,9 +252,11 @@ async function load() {
   document.getElementById('st-draft').textContent = draft;
   try {
     var st = await api('/api/stats', 'POST', { token: TOKEN });
-    if (st && st.clicks != null) document.getElementById('st-views').textContent = st.clicks;
-    else document.getElementById('st-views').textContent = '0';
-  } catch (e) { document.getElementById('st-views').textContent = '0'; }
+    var views=document.getElementById('st-views');
+    if (!ALL.length) { views.textContent='0'; views.title='Aucun produit : aucune vue de produit.'; }
+    else if (st && st.product_views_total != null) { views.textContent=String(st.product_views_total); views.title='Vues de tes produits'; }
+    else { views.textContent='—'; views.title='Le suivi des vues de produits est indisponible. Les clics du lien personnel ne sont pas des vues de produits.'; }
+  } catch (e) { document.getElementById('st-views').textContent = ALL.length ? '—' : '0'; }
   render();
 }
 load();
