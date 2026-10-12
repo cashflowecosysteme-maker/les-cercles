@@ -67,7 +67,7 @@ function money(n){return Number(n||0).toLocaleString('fr-CA',{minimumFractionDig
     <div class="stat"><div class="ico">✓</div><b id="s-pub" style="color:var(--green)">0</b><span>Publiés</span></div>
     <div class="stat"><div class="ico">📝</div><b id="s-draft" style="color:var(--gold)">0</b><span>Brouillons</span></div>
     <div class="stat"><div class="ico">👥</div><b id="s-cercle">0</b><span>Ton cercle</span></div>
-    <div class="stat"><div class="ico">👁</div><b id="s-clics">0</b><span>Clics</span></div>
+    <div class="stat"><div class="ico">👁</div><b id="s-clics">0</b><span>Clics sur ton lien</span></div>
   </div>
 
   <div class="stats" style="grid-template-columns:repeat(3,1fr)">
@@ -108,7 +108,7 @@ function money(n){return Number(n||0).toLocaleString('fr-CA',{minimumFractionDig
     document.getElementById('s-pub').textContent = String(st.products_active||0);
     document.getElementById('s-draft').textContent = String(st.products_draft||0);
     document.getElementById('s-cercle').textContent = String(st.team_total||st.team_n1||0);
-    document.getElementById('s-clics').textContent = String(st.clicks||0);
+    document.getElementById('s-clics').textContent = st.success && String(st.code || '').toUpperCase() === String(code || '').toUpperCase() ? String(st.clicks || 0) : '—';
     document.getElementById('s-revenus').textContent = money(st.gains||0);
     document.getElementById('s-apayer').textContent = money(st.to_pay!=null?st.to_pay:st.pending||0);
     document.getElementById('s-payes').textContent = money(st.gains||0);

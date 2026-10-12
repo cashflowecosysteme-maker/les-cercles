@@ -663,8 +663,12 @@ async function handleStats(request, env) {
     const raw = await env.CASHFLOW_KV.get('session:' + token);
     if (raw) try { session = JSON.parse(raw); } catch (_) {}
   }
-  const userId = session && (session.userId || session.id);
-  const code = (session && (session.code || session.affiliate_code || session.affiliateCode)) || '';
+  if (!session) return json({error:'Session expirée.'},401);
+  const userId = session.userId || session.id;
+  if (!userId) return json({error:'Compte introuvable.'},401);
+  const account = await env.DB.prepare('SELECT id,affiliate_code FROM users WHERE id = ?').bind(userId).first();
+  if (!account) return json({error:'Compte introuvable.'},401);
+  const code = String(account.affiliate_code || '').trim().toUpperCase();
 
   // Produits (scope vendeur si userId)
   let products_total = 0, products_active = 0, products_draft = 0;
@@ -705,17 +709,8 @@ async function handleStats(request, env) {
     }
   } catch (e) { console.error('stats team', e); }
 
-  // Clics ref (KV)
-  let clicks = 0;
-  try {
-    if (env.CASHFLOW_KV && code) {
-      const list = await env.CASHFLOW_KV.list({ prefix: 'ref_click:' + String(code).toUpperCase() + ':' });
-      for (const k of (list.keys || [])) {
-        const v = await env.CASHFLOW_KV.get(k.name);
-        clicks += parseInt(v || '0', 10) || 0;
-      }
-    }
-  } catch (e) { console.error('stats clicks', e); }
+  // Clics exclusivement rattachés au code du compte vérifié dans D1.
+  const clicks = await nyxPersonalClicks(env,code);
 
   // Gains / à payer selon rôle
   let gains = 0, pending = 0, to_pay = 0;
@@ -2999,4 +2994,21 @@ async function nyxMerchantPayments(request, env) {
   }
   const rows = await env.DB.prepare(`SELECT c.*,u.full_name AS benef_name,u.email AS benef_email,u.paypal_email AS benef_paypal,p.title AS product_title FROM commissions c LEFT JOIN users u ON u.id=c.beneficiary_id LEFT JOIN marketplace_products p ON p.id=c.product_id WHERE c.seller_id = ? ORDER BY c.created_at DESC`).bind(seller.id).all();
   return json({commissions:rows.results || []});
+}
+
+async function nyxPersonalClicks(env,code) {
+  if (!env.CASHFLOW_KV || !code) return 0;
+  const prefix='ref_click:'+String(code).trim().toUpperCase()+':';
+  let total=0,cursor;
+  do {
+    const list=await env.CASHFLOW_KV.list({prefix,...(cursor?{cursor}:{} )});
+    for (const key of list.keys || []) {
+      if (!key.name.startsWith(prefix)) continue;
+      const raw=await env.CASHFLOW_KV.get(key.name);
+      const value=Number(raw);
+      if (Number.isSafeInteger(value) && value>0) total+=value;
+    }
+    cursor=list.list_complete===false?list.cursor:null;
+  } while(cursor);
+  return total;
 }
