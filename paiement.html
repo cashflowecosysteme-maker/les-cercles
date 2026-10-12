@@ -44,13 +44,14 @@ function money(n){return Number(n||0).toLocaleString('fr-CA',{minimumFractionDig
   <div class="card">
     <div style="font-weight:600;color:#fff;margin-bottom:4px">⏱ Paiements en attente</div>
     <p class="sub">Payez vos membres pour leurs commissions</p>
-    <div class="empty">Aucun paiement en attente</div>
+    <div id="pending-payments">Chargement…</div>
   </div>
   <div style="text-align:center;color:var(--t4);font-size:12px;margin:12px 0">Historique</div>
   <div class="card">
     <div style="font-weight:600;color:#fff;margin-bottom:4px">Historique des paiements</div>
     <p class="sub">Vos paiements déjà effectués</p>
-    <div class="empty">Aucun paiement effectué<small>Les paiements traités apparaîtront ici</small></div>
+    <div id="paid-payments">Chargement…</div>
   </div>
 </div>
+<script src="/js/merchant-payments.js"></script>
 </body></html>

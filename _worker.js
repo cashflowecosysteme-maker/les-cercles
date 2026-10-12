@@ -297,11 +297,14 @@ async function handleUpdateProduct(request, env) {
   if (typeof ensureMarketplaceBillingColumns === 'function') await ensureMarketplaceBillingColumns(env);
   await ensureMarketplacePromoColumns(env);
   const body = await request.json().catch(() => ({}));
+  const session = await sessionFromRequest(request,env,body);
+  if (!session || session.role !== 'admin') return json({error:'Non autorisé.'},401);
   const id = (body.id || '').trim();
   if (!id) return json({ error: 'Id requis.' }, 400);
   try {
     const row = await env.DB.prepare('SELECT id, seller_id FROM marketplace_products WHERE id = ?').bind(id).first();
     if (!row) return json({ error: 'Produit introuvable.' }, 404);
+    if (row.seller_id !== (session.userId || session.id)) return json({error:'Ce produit appartient à un autre vendeur.'},403);
     if (isSuperAdminProduct(row)) {
       return json({ error: 'Ce produit appartient au Super Admin. Modification réservée au Super Admin Univers.' }, 403);
     }
@@ -392,22 +395,15 @@ async function ensureCommissionsTable(env) {
       paid_at TEXT
     )`).run();
   } catch (e) { console.error('commissions table', e); }
+  const columns = await env.DB.prepare('PRAGMA table_info(commissions)').all();
+  for (const [name,type] of [['rate_percent','REAL'],['sale_amount','REAL'],['rate_source','TEXT']]) {
+    if (!(columns.results || []).some(c=>c.name===name)) {
+      try { await env.DB.prepare('ALTER TABLE commissions ADD COLUMN '+name+' '+type).run(); }
+      catch(e) { const current=await env.DB.prepare('PRAGMA table_info(commissions)').all(); if(!(current.results||[]).some(c=>c.name===name)) throw e; }
+    }
+  }
   try { await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_comm_seller ON commissions(seller_id)`).run(); } catch (_) {}
   try { await env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_comm_benef ON commissions(beneficiary_id)`).run(); } catch (_) {}
-}
-
-async function getProgramPercents(env, sellerId) {
-  // % cercle 1/2/3 — programme global ou défaut
-  let n1 = 25, n2 = 10, n3 = 5;
-  try {
-    const prog = await env.DB.prepare(`SELECT commission_l1, commission_l2, commission_l3 FROM programs LIMIT 1`).first();
-    if (prog) {
-      if (prog.commission_l1 != null) n1 = Number(prog.commission_l1);
-      if (prog.commission_l2 != null) n2 = Number(prog.commission_l2);
-      if (prog.commission_l3 != null) n3 = Number(prog.commission_l3);
-    }
-  } catch (_) {}
-  return { n1, n2, n3 };
 }
 
 async function resolveChainByRef(env, refCode) {
@@ -435,53 +431,44 @@ async function resolveChainByRef(env, refCode) {
  * seller_id = qui DOIT payer (Admin propriétaire du produit, ou superadmin)
  * ref = code du promoteur qui a amené la vente
  */
-async function writeSaleCommissions(env, {
-  sellerId,
-  productId,
-  amount,
-  buyerEmail,
-  refCode,
-  source
-}) {
+async function writeSaleCommissions(env, {sellerId,productId,amount,buyerEmail,refCode,source,externalId,currency='CAD'}) {
   await ensureCommissionsTable(env);
-  const saleId = crypto.randomUUID();
-  const now = new Date().toISOString();
-  const total = Number(amount) || 0;
-  const { n1, n2, n3 } = await getProgramPercents(env, sellerId);
-  const percents = [n1, n2, n3];
-  const chain = await resolveChainByRef(env, refCode);
-
-  const created = [];
-  for (let i = 0; i < chain.length && i < 3; i++) {
+  await nyxCommissionSchema(env);
+  const product = await env.DB.prepare('SELECT id,seller_id,commission_n1,commission_n2,commission_n3 FROM marketplace_products WHERE id = ?').bind(productId || '').first();
+  if (!product) throw new Error('Produit introuvable : aucune commission enregistrée.');
+  const owner = String(product.seller_id || 'superadmin');
+  if (owner.toLowerCase() !== String(sellerId).toLowerCase()) throw new Error('Le vendeur ne correspond pas au propriétaire du produit.');
+  if (!externalId) throw new Error('Identifiant de vente requis.');
+  const total = Number(amount);
+  if (!Number.isFinite(total) || total < 0) throw new Error('Montant de vente invalide.');
+  const encoded = new TextEncoder().encode(JSON.stringify([owner,product.id,String(externalId)]));
+  const hash = await crypto.subtle.digest('SHA-256',encoded);
+  const saleId = 'sale_' + [...new Uint8Array(hash)].map(n=>n.toString(16).padStart(2,'0')).join('');
+  const existing = await env.DB.prepare('SELECT id FROM commission_sales WHERE id = ?').bind(saleId).first();
+  if (existing) return {saleId,duplicate:true,commissions:[]};
+  const now = new Date().toISOString(), attempt = crypto.randomUUID();
+  const chain = await resolveChainByRef(env,refCode);
+  const statements = [env.DB.prepare(`INSERT OR IGNORE INTO commission_sales (id,seller_id,product_id,external_id,amount,currency,attempt,created_at) VALUES (?,?,?,?,?,?,?,?)`).bind(saleId,owner,product.id,String(externalId),total,currency,attempt,now)];
+  const created = [], seen = new Set();
+  for (let i=0;i<Math.min(chain.length,3);i++) {
     const benef = chain[i];
-    const pct = percents[i] || 0;
-    const commissionAmount = Math.round((total * pct / 100) * 100) / 100;
+    if (seen.has(benef.id)) break;
+    seen.add(benef.id);
+    const override = await env.DB.prepare('SELECT commission_n1,commission_n2,commission_n3 FROM commission_overrides WHERE product_id = ? AND beneficiary_id = ?').bind(product.id,benef.id).first();
+    const key = 'commission_n'+(i+1);
+    const personal = override && override[key] != null;
+    const pct = nyxRate(personal ? override[key] : product[key]) ?? 0;
+    const commissionAmount = Math.round(total*pct)/100;
     if (commissionAmount <= 0) continue;
-    const id = crypto.randomUUID();
-    await env.DB.prepare(
-      `INSERT INTO commissions
-       (id, sale_id, product_id, seller_id, beneficiary_id, beneficiary_code, level, amount, currency, status, buyer_email, ref_code, source, created_at, paid_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'CAD', 'pending', ?, ?, ?, ?, NULL)`
-    ).bind(
-      id,
-      saleId,
-      productId || null,
-      sellerId || null,
-      benef.id,
-      benef.affiliate_code || null,
-      i + 1,
-      commissionAmount,
-      (buyerEmail || '').toLowerCase() || null,
-      (refCode || '').toString().toUpperCase() || null,
-      source || 'webhook',
-      now
-    ).run();
-    created.push({ id, level: i + 1, beneficiary_id: benef.id, code: benef.affiliate_code, amount: commissionAmount });
+    const id = saleId+'_'+(i+1);
+    statements.push(env.DB.prepare(`INSERT INTO commissions (id,sale_id,product_id,seller_id,beneficiary_id,beneficiary_code,level,amount,currency,status,buyer_email,ref_code,source,created_at,paid_at,rate_percent,sale_amount,rate_source) SELECT ?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,NULL,?,?,? WHERE EXISTS (SELECT 1 FROM commission_sales WHERE id = ? AND attempt = ?)`).bind(id,saleId,product.id,owner,benef.id,benef.affiliate_code || null,i+1,commissionAmount,currency,(buyerEmail || '').toLowerCase() || null,(refCode || '').toUpperCase() || null,source || 'webhook',now,pct,total,personal?'personal':'product',saleId,attempt));
+    created.push({id,level:i+1,beneficiary_id:benef.id,amount:commissionAmount,rate_percent:pct,rate_source:personal?'personal':'product'});
   }
-
-  // Vente sans ref : aucune commission promoteur (normal)
-  return { saleId, commissions: created, chain_length: chain.length };
+  const results = await env.DB.batch(statements);
+  const duplicate = !results[0].meta?.changes;
+  return {saleId,duplicate,commissions:duplicate?[]:created,chain_length:chain.length};
 }
+
 
 async function handleSaleWebhook(request, env) {
   // Webhook générique vente — Systeme.io OU tout autre outil
@@ -515,7 +502,7 @@ async function handleSaleWebhook(request, env) {
   let amount = body.amount || body.price || data.amount || data.price ||
     (data.purchase && (data.purchase.amount || data.purchase.price)) ||
     (body.items && body.items[0] && body.items[0].amount) || 0;
-  amount = Number(amount) || 0;
+  amount = Number(amount);
 
   // ref promoteur
   const refCode = (
@@ -544,7 +531,7 @@ async function handleSaleWebhook(request, env) {
   if (!sellerId && productId) {
     try {
       const prod = await env.DB.prepare(`SELECT seller_id FROM marketplace_products WHERE id = ?`).bind(productId).first();
-      if (prod && prod.seller_id) sellerId = prod.seller_id;
+      if (prod) sellerId = prod.seller_id || 'superadmin';
     } catch (_) {}
   }
 
@@ -571,7 +558,7 @@ async function handleSaleWebhook(request, env) {
 
   // Super admin / produit maison : seller_id superadmin autorisé avec secret global
   if (sellerId === 'superadmin' || sellerId === 'SUPERADMIN') {
-    if (globalSecret && secret !== globalSecret) {
+    if (!globalSecret || !secret || secret !== globalSecret) {
       return json({ error: 'Secret webhook invalide.' }, 401);
     }
   } else if (sellerRow) {
@@ -592,7 +579,16 @@ async function handleSaleWebhook(request, env) {
     return json({ error: 'seller_id requis (propriétaire du produit qui doit les commissions).' }, 400);
   }
 
+  const externalId = String(body.sale_id ?? body.transaction_id ?? body.order_id ?? body.invoice_id ?? body.purchase_id ?? data.sale_id ?? data.transaction_id ?? data.order_id ?? data.invoice_id ?? data.purchase_id ?? body.transaction?.id ?? data.transaction?.id ?? body.order?.id ?? data.order?.id ?? data.purchase?.id ?? data.invoice?.id ?? body.purchase?.id ?? body.invoice?.id ?? body.event_id ?? body.id ?? data.id ?? '').trim();
+  if (!productId || !externalId) return json({error:'product_id et un identifiant de vente (sale_id, transaction_id, order_id ou purchase.id) sont requis.'},400);
+  const product = await env.DB.prepare('SELECT seller_id FROM marketplace_products WHERE id = ?').bind(productId).first();
+  if (!product) return json({error:'Produit introuvable.'},404);
+  if (String(product.seller_id || 'superadmin').toLowerCase() !== String(sellerId).toLowerCase()) return json({error:'Vendeur incorrect pour ce produit.'},403);
+  if (!Number.isFinite(amount) || amount < 0) return json({error:'Montant invalide.'},400);
+  const currency = String(body.currency || data.currency || 'CAD').toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) return json({error:'Devise invalide.'},400);
   const result = await writeSaleCommissions(env, {
+    externalId, currency,
     sellerId,
     productId,
     amount,
@@ -773,6 +769,9 @@ async function handleCreateProduct(request, env) {
       try { sellerId = JSON.parse(raw).userId || null; } catch (_) {}
     }
   }
+  const creator = await sessionFromRequest(request,env,body);
+  if (!creator || creator.role !== 'admin' || !sellerId) return json({error:'Accès réservé au commerçant.'},403);
+  let rates; try { rates=[1,2,3].map(n=>nyxRate(body['commission_n'+n]) ?? 0); } catch(e) { return json({error:e.message},400); }
   const title = (body.title || '').trim();
   if (!title) return json({ error: 'Titre requis.' }, 400);
   const id = crypto.randomUUID();
@@ -795,9 +794,9 @@ async function handleCreateProduct(request, env) {
     (['one_time','subscription','both'].includes(String(body.billing_type || body.billingType || ''))
       ? String(body.billing_type || body.billingType)
       : 'one_time'),
-    body.commission_n1 != null ? Number(body.commission_n1) : null,
-    body.commission_n2 != null ? Number(body.commission_n2) : null,
-    body.commission_n3 != null ? Number(body.commission_n3) : null,
+    rates[0],
+    rates[1],
+    rates[2],
     (body.affiliateLink || body.affiliate_link || '').trim() || null,
     (body.promoCode || body.promo_code || '').trim() || null,
     status,
@@ -1242,6 +1241,8 @@ const url = new URL(request.url);
     }
 
     try {
+      if (path === '/api/profile/paypal' && ['GET','POST'].includes(request.method)) return await nyxOwnPaypal(request,env);
+      if (path === '/api/commissions/to-pay' && ['GET','POST'].includes(request.method)) return await nyxMerchantPayments(request,env);
       if (path === '/api/signup' && request.method === 'POST') return await handleSignup(request, env);
       if (path === '/api/login' && request.method === 'POST') return await handleLogin(request, env);
       if (path === '/api/ref-resolve' && request.method === 'GET') return await handleResolveRef(request, env);
@@ -1539,7 +1540,7 @@ async function handleCheckAuth(request, env) {
         email = row.email || email;
         role = row.role || role;
         firstname = firstname || String(row.full_name || '').split(' ')[0] || '';
-        paypal = row.paypal_email || paypal;
+        paypal = row.paypal_email || '';
         code = String(row.affiliate_code || '').trim().toUpperCase();
 
         if (!code) {
@@ -2928,3 +2929,74 @@ async function handleTTSCachedAudio(request, env, url) {
     try { await env.DB.prepare(`ALTER TABLE marketplace_products ADD COLUMN price_monthly REAL DEFAULT 0`).run(); } catch (_) {}
     try { await env.DB.prepare(`ALTER TABLE marketplace_products ADD COLUMN billing_type TEXT DEFAULT 'one_time'`).run(); } catch (_) {}
 
+
+async function nyxCommissionSchema(env) {
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS commission_overrides (product_id TEXT NOT NULL, beneficiary_id TEXT NOT NULL, commission_n1 REAL, commission_n2 REAL, commission_n3 REAL, updated_at TEXT, PRIMARY KEY(product_id,beneficiary_id))`).run();
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS commission_sales (id TEXT PRIMARY KEY, seller_id TEXT NOT NULL, product_id TEXT NOT NULL, external_id TEXT NOT NULL, amount REAL NOT NULL, currency TEXT NOT NULL, attempt TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(seller_id,product_id,external_id))`).run();
+}
+function nyxRate(value) {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0 || n > 100) throw new Error('Chaque pourcentage doit être compris entre 0 et 100.');
+  return n;
+}
+function nyxPaypal(value) {
+  const email = String(value || '').trim();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Adresse PayPal invalide.');
+  return email;
+}
+async function nyxMemberPaypal(request, env) {
+  if (!(await requireAdmin(request, env))) return json({error:'Non autorisé.'},401);
+  const b = await request.json();
+  let paypal; try { paypal = nyxPaypal(b.paypal); } catch(e) { return json({error:e.message},400); }
+  const user = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(String(b.id || '')).first();
+  if (!user) return json({error:'Compte introuvable.'},404);
+  await env.DB.prepare("UPDATE users SET paypal_email = ?, updated_at = datetime('now') WHERE id = ?").bind(paypal || null,user.id).run();
+  return json({success:true,paypal});
+}
+async function nyxPersonalOverride(request, env) {
+  if (!(await requireAdmin(request, env))) return json({error:'Non autorisé.'},401);
+  await nyxCommissionSchema(env);
+  const url = new URL(request.url);
+  if (request.method === 'GET') {
+    const rows = await env.DB.prepare(`SELECT o.*, p.title FROM commission_overrides o LEFT JOIN marketplace_products p ON p.id = o.product_id WHERE o.beneficiary_id = ?`).bind(url.searchParams.get('beneficiary_id') || '').all();
+    return json({overrides:rows.results || []});
+  }
+  const b = await request.json();
+  const product = await env.DB.prepare('SELECT id FROM marketplace_products WHERE id = ?').bind(String(b.product_id || '')).first();
+  const member = await env.DB.prepare("SELECT id FROM users WHERE id = ? AND role = 'affiliate'").bind(String(b.beneficiary_id || '')).first();
+  if (!product || !member) return json({error:'Produit ou promoteur introuvable.'},404);
+  let rates; try { rates = [1,2,3].map(n => nyxRate(b['commission_n'+n])); } catch(e) { return json({error:e.message},400); }
+  if (rates.every(n => n === null)) {
+    await env.DB.prepare('DELETE FROM commission_overrides WHERE product_id = ? AND beneficiary_id = ?').bind(product.id,member.id).run();
+  } else {
+    await env.DB.prepare(`INSERT INTO commission_overrides (product_id,beneficiary_id,commission_n1,commission_n2,commission_n3,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(product_id,beneficiary_id) DO UPDATE SET commission_n1=excluded.commission_n1,commission_n2=excluded.commission_n2,commission_n3=excluded.commission_n3,updated_at=excluded.updated_at`).bind(product.id,member.id,...rates,new Date().toISOString()).run();
+  }
+  return json({success:true});
+}
+async function nyxOwnPaypal(request, env) {
+  const b = request.method === 'POST' ? await request.json() : {};
+  const session = await sessionFromRequest(request,env,b);
+  if (!session) return json({error:'Session expirée.'},401);
+  const user = await env.DB.prepare('SELECT id,paypal_email FROM users WHERE id = ?').bind(session.userId || session.id || '').first();
+  if (!user) return json({error:'Compte introuvable.'},404);
+  if (request.method === 'GET') return json({paypal:user.paypal_email || ''});
+  let paypal; try { paypal = nyxPaypal(b.paypal); } catch(e) { return json({error:e.message},400); }
+  await env.DB.prepare("UPDATE users SET paypal_email = ?, updated_at = datetime('now') WHERE id = ?").bind(paypal || null,user.id).run();
+  return json({success:true,paypal});
+}
+async function nyxMerchantPayments(request, env) {
+  const b = request.method === 'POST' ? await request.json() : {};
+  const session = await sessionFromRequest(request,env,b);
+  if (!session) return json({error:'Session expirée.'},401);
+  const seller = await env.DB.prepare('SELECT id,role FROM users WHERE id = ?').bind(session.userId || session.id || '').first();
+  if (!seller || seller.role !== 'admin') return json({error:'Accès réservé au commerçant.'},403);
+  await ensureCommissionsTable(env);
+  if (request.method === 'POST') {
+    const result = await env.DB.prepare("UPDATE commissions SET status = 'paid', paid_at = ? WHERE id = ? AND seller_id = ? AND status = 'pending'").bind(new Date().toISOString(),String(b.id || ''),seller.id).run();
+    if (!result.meta?.changes) return json({error:'Commission introuvable ou déjà payée.'},409);
+    return json({success:true});
+  }
+  const rows = await env.DB.prepare(`SELECT c.*,u.full_name AS benef_name,u.email AS benef_email,u.paypal_email AS benef_paypal,p.title AS product_title FROM commissions c LEFT JOIN users u ON u.id=c.beneficiary_id LEFT JOIN marketplace_products p ON p.id=c.product_id WHERE c.seller_id = ? ORDER BY c.created_at DESC`).bind(seller.id).all();
+  return json({commissions:rows.results || []});
+}
