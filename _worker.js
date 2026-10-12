@@ -305,11 +305,16 @@ async function handleUpdateProduct(request, env) {
     if (isSuperAdminProduct(row)) {
       return json({ error: 'Ce produit appartient au Super Admin. Modification réservée au Super Admin Univers.' }, 403);
     }
+    const rates=[1,2,3].map(n=>{const raw=body['commission_n'+n]??body['n'+n];return raw==null?null:Number(raw)});
+    if(rates.some(v=>v!==null&&(!Number.isFinite(v)||v<0||v>100)))return json({error:'Chaque commission doit être comprise entre 0 et 100.'},400);
     const status = body.status != null ? String(body.status) : null;
     await env.DB.prepare(
       `UPDATE marketplace_products SET
         title = COALESCE(?, title),
         description_short = COALESCE(?, description_short),
+        commission_n1 = COALESCE(?, commission_n1),
+        commission_n2 = COALESCE(?, commission_n2),
+        commission_n3 = COALESCE(?, commission_n3),
         price = COALESCE(?, price),
         price_monthly = COALESCE(?, price_monthly),
         billing_type = COALESCE(?, billing_type),
@@ -325,6 +330,7 @@ async function handleUpdateProduct(request, env) {
     ).bind(
       body.title || null,
       body.description || body.description_short || null,
+      ...rates,
       body.price != null ? Number(body.price) : null,
       body.price_monthly != null ? Number(body.price_monthly) : null,
       body.billing_type || null,
@@ -2921,3 +2927,4 @@ async function handleTTSCachedAudio(request, env, url) {
 
     try { await env.DB.prepare(`ALTER TABLE marketplace_products ADD COLUMN price_monthly REAL DEFAULT 0`).run(); } catch (_) {}
     try { await env.DB.prepare(`ALTER TABLE marketplace_products ADD COLUMN billing_type TEXT DEFAULT 'one_time'`).run(); } catch (_) {}
+
